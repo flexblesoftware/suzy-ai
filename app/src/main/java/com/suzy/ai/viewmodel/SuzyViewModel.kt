@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.suzy.ai.audio.AudioEngine
+import com.suzy.ai.data.PersonaProfile
 import com.suzy.ai.data.SettingsRepository
 import com.suzy.ai.data.SuzySettings
 import com.suzy.ai.network.GeminiLiveClient
@@ -35,7 +36,7 @@ data class LogEntry(
 
 data class SuzyUiState(
     val state: SuzyState = SuzyState.IDLE,
-    val statusText: String = "Tap Start to talk with Suzy",
+    val statusText: String = "Tap Start to talk",
     val liveCaption: String = "",
     val amplitude: Float = 0f,
     val isMuted: Boolean = false,
@@ -68,6 +69,7 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
 
     private val liveClient = GeminiLiveClient(
         onConnected = {
+            val activeName = settings.value.activePersonaName
             audioEngine.setSpeakerphone(_uiState.value.isSpeakerOn)
             audioEngine.playUiChime(true)
             audioEngine.startPlayback()
@@ -79,14 +81,15 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
             )
-            appendLog("SYSTEM", "Connected to Gemini Live")
+            appendLog("SYSTEM", "$activeName (${settings.value.voiceName}) connected")
             _uiState.update {
-                it.copy(state = SuzyState.LISTENING, statusText = "Suzy sun rahi hai...")
+                it.copy(state = SuzyState.LISTENING, statusText = "$activeName sun rahi hai...")
             }
         },
         onAudioOutput = { pcm ->
+            val activeName = settings.value.activePersonaName
             _uiState.update {
-                it.copy(state = SuzyState.SPEAKING, statusText = "Suzy bol rahi hai...")
+                it.copy(state = SuzyState.SPEAKING, statusText = "$activeName bol rahi hai...")
             }
             audioEngine.playPcmChunk(pcm) { amp ->
                 _uiState.update { it.copy(amplitude = amp) }
@@ -104,22 +107,24 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
             liveClientSendToolResponse(callId, name, result)
         },
         onInterrupted = {
+            val activeName = settings.value.activePersonaName
             if (settings.value.bargeInEnabled) {
                 audioEngine.flushPlayback()
             }
             _uiState.update {
-                it.copy(state = SuzyState.LISTENING, statusText = "Suzy sun rahi hai...", amplitude = 0.1f)
+                it.copy(state = SuzyState.LISTENING, statusText = "$activeName sun rahi hai...", amplitude = 0.1f)
             }
         },
         onTurnComplete = {
+            val activeName = settings.value.activePersonaName
             val caption = _uiState.value.liveCaption.trim()
             if (caption.isNotBlank()) {
-                appendLog("SUZY", caption)
+                appendLog(activeName.uppercase(), caption)
             }
             _uiState.update {
                 it.copy(
                     state = SuzyState.LISTENING,
-                    statusText = "Suzy sun rahi hai...",
+                    statusText = "$activeName sun rahi hai...",
                     liveCaption = "",
                     amplitude = 0.05f
                 )
@@ -138,7 +143,7 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
                 if (cur.state != SuzyState.ERROR) {
                     cur.copy(
                         state = SuzyState.IDLE,
-                        statusText = "Tap Start to talk with Suzy",
+                        statusText = "Tap Start to talk",
                         amplitude = 0f
                     )
                 } else cur
@@ -163,7 +168,11 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         _uiState.update {
-            it.copy(state = SuzyState.CONNECTING, statusText = "Suzy se connect ho raha hai...", liveCaption = "")
+            it.copy(
+                state = SuzyState.CONNECTING,
+                statusText = "${currentSettings.activePersonaName} se connect ho raha hai...",
+                liveCaption = ""
+            )
         }
         liveClient.connect(currentSettings)
     }
@@ -174,7 +183,34 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
         audioEngine.releaseAll()
         appendLog("SYSTEM", "Session stopped")
         _uiState.update {
-            it.copy(state = SuzyState.IDLE, statusText = "Tap Start to talk with Suzy", amplitude = 0f)
+            it.copy(state = SuzyState.IDLE, statusText = "Tap Start to talk", amplitude = 0f)
+        }
+    }
+
+    fun selectPersona(persona: PersonaProfile) {
+        val updated = settings.value.copy(
+            activePersonaName = persona.name,
+            voiceName = persona.voiceName,
+            systemPrompt = persona.systemPrompt,
+            temperature = persona.temperature
+        )
+        viewModelScope.launch {
+            repo.saveSettings(updated)
+            appendLog("PERSONA", "Switched to ${persona.name} (${persona.role} - ${persona.voiceName})")
+            if (_uiState.value.state == SuzyState.LISTENING || _uiState.value.state == SuzyState.SPEAKING) {
+                stopSession()
+                _uiState.update { it.copy(statusText = "${persona.name} ready! Tap Start") }
+            } else {
+                _uiState.update { it.copy(statusText = "${persona.name} selected (${persona.voiceName})") }
+            }
+        }
+    }
+
+    fun selectVoice(voiceName: String) {
+        val updated = settings.value.copy(voiceName = voiceName)
+        viewModelScope.launch {
+            repo.saveSettings(updated)
+            appendLog("VOICE", "Voice changed to $voiceName")
         }
     }
 
@@ -182,7 +218,7 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
         val next = !_uiState.value.isMuted
         audioEngine.isMuted = next
         _uiState.update {
-            it.copy(isMuted = next, statusText = if (next) "Mic muted hai" else "Suzy sun rahi hai...")
+            it.copy(isMuted = next, statusText = if (next) "Mic muted hai" else "${settings.value.activePersonaName} sun rahi hai...")
         }
     }
 
@@ -204,8 +240,6 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
         appendLog("MANUAL TOOL", res)
     }
 
-    fun getDeviceTelemetry(): String = suzyTools.getDeviceStatus()
-
     fun clearLogs() {
         _uiState.update { it.copy(logs = emptyList()) }
     }
@@ -217,7 +251,7 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
 
     fun interruptSuzy() {
         audioEngine.flushPlayback()
-        _uiState.update { it.copy(state = SuzyState.LISTENING, statusText = "Suzy sun rahi hai...") }
+        _uiState.update { it.copy(state = SuzyState.LISTENING, statusText = "${settings.value.activePersonaName} sun rahi hai...") }
     }
 
     fun updateSettings(updated: SuzySettings) {

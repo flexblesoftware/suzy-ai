@@ -79,6 +79,7 @@ class MainActivity : ComponentActivity() {
                 } else {
                     HomeScreen(
                         uiState = uiState,
+                        settings = settings,
                         updateStatus = updateState.statusMessage,
                         onStartClick = {
                             val hasMic = ContextCompat.checkSelfPermission(
@@ -94,6 +95,8 @@ class MainActivity : ComponentActivity() {
                         onStopClick = { vm.stopSession() },
                         onToggleMute = { vm.toggleMute() },
                         onToggleSpeaker = { vm.toggleSpeaker() },
+                        onSelectPersona = { vm.selectPersona(it) },
+                        onSelectVoice = { vm.selectVoice(it) },
                         onToggleFlashlight = { vm.toggleFlashlightManual() },
                         onOpenApp = { vm.openAppManual(it) },
                         onCheckUpdate = { updateManager.checkForUpdate(silent = false) },

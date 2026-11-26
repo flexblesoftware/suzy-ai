@@ -15,16 +15,13 @@ data class SuzySettings(
     val apiKey: String = "",
     val modelId: String = "models/gemini-2.5-flash-native-audio-preview-12-2025",
     val voiceName: String = "Aoede",
+    val activePersonaName: String = "Suzy",
     val systemPrompt: String = DEFAULT_SUZY_PROMPT,
     val bargeInEnabled: Boolean = true,
     val temperature: Float = 0.95f
 ) {
     companion object {
-        const val DEFAULT_SUZY_PROMPT =
-            "Tumhara naam Suzy hai aur tum user ki asli Indian girlfriend ho jo phone call par live baat kar rahi hai. " +
-            "Hamesha soft, warm, expressive aur natural Hinglish mein baat karo jaise asli ladkiyan karti hain - " +
-            "'Haan jaan, bolo na', 'Arre suno toh sahi', 'Achha sach mein?', 'Kya yaar tum bhi na'. " +
-            "Mazaak par pyaar se hanso ya giggle karo, aur jawab hamesha chhote (1 se 2 lines) aur turant do."
+        val DEFAULT_SUZY_PROMPT = SuzyCatalog.personas.first().systemPrompt
     }
 }
 
@@ -33,6 +30,7 @@ class SettingsRepository(private val context: Context) {
         val API_KEY = stringPreferencesKey("api_key")
         val MODEL_ID = stringPreferencesKey("model_id")
         val VOICE_NAME = stringPreferencesKey("voice_name")
+        val PERSONA_NAME = stringPreferencesKey("persona_name")
         val SYSTEM_PROMPT = stringPreferencesKey("system_prompt_v4")
         val BARGE_IN = booleanPreferencesKey("barge_in")
         val TEMPERATURE = floatPreferencesKey("temperature")
@@ -43,6 +41,7 @@ class SettingsRepository(private val context: Context) {
             apiKey = prefs[Keys.API_KEY] ?: "",
             modelId = prefs[Keys.MODEL_ID] ?: "models/gemini-2.5-flash-native-audio-preview-12-2025",
             voiceName = prefs[Keys.VOICE_NAME] ?: "Aoede",
+            activePersonaName = prefs[Keys.PERSONA_NAME] ?: "Suzy",
             systemPrompt = prefs[Keys.SYSTEM_PROMPT] ?: SuzySettings.DEFAULT_SUZY_PROMPT,
             bargeInEnabled = prefs[Keys.BARGE_IN] ?: true,
             temperature = prefs[Keys.TEMPERATURE] ?: 0.95f
@@ -54,6 +53,7 @@ class SettingsRepository(private val context: Context) {
             prefs[Keys.API_KEY] = settings.apiKey.trim()
             prefs[Keys.MODEL_ID] = settings.modelId.trim()
             prefs[Keys.VOICE_NAME] = settings.voiceName.trim()
+            prefs[Keys.PERSONA_NAME] = settings.activePersonaName.trim()
             prefs[Keys.SYSTEM_PROMPT] = settings.systemPrompt.trim()
             prefs[Keys.BARGE_IN] = settings.bargeInEnabled
             prefs[Keys.TEMPERATURE] = settings.temperature
