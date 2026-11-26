@@ -27,13 +27,14 @@ data class SuzyUiState(
     val statusText: String = "Tap Start to talk with Suzy",
     val liveCaption: String = "",
     val amplitude: Float = 0f,
-    val isMuted: Boolean = false
+    val isMuted: Boolean = false,
+    val isSpeakerOn: Boolean = true
 )
 
 class SuzyViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repo = SettingsRepository(application.applicationContext)
-    private val audioEngine = AudioEngine(viewModelScope)
+    private val audioEngine = AudioEngine(application.applicationContext, viewModelScope)
 
     val settings: StateFlow<SuzySettings> = repo.settingsFlow.stateIn(
         scope = viewModelScope,
@@ -46,6 +47,7 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
 
     private val liveClient = GeminiLiveClient(
         onConnected = {
+            audioEngine.setSpeakerphone(_uiState.value.isSpeakerOn)
             audioEngine.startPlayback()
             audioEngine.startRecording(
                 onAudioChunk = { pcm -> liveClientSend(pcm) },
@@ -102,7 +104,7 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
         onClosed = {
             audioEngine.releaseAll()
             if (_uiState.value.state != SuzyState.ERROR) {
-                _uiState.value = SuzyUiState()
+                _uiState.value = SuzyUiState(isSpeakerOn = _uiState.value.isSpeakerOn)
             }
         }
     )
@@ -122,7 +124,8 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
         }
         _uiState.value = SuzyUiState(
             state = SuzyState.CONNECTING,
-            statusText = "Suzy se connect ho raha hai..."
+            statusText = "Suzy se connect ho raha hai...",
+            isSpeakerOn = _uiState.value.isSpeakerOn
         )
         liveClient.connect(currentSettings)
     }
@@ -130,7 +133,7 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
     fun stopSession() {
         liveClient.disconnect()
         audioEngine.releaseAll()
-        _uiState.value = SuzyUiState()
+        _uiState.value = SuzyUiState(isSpeakerOn = _uiState.value.isSpeakerOn)
     }
 
     fun toggleMute() {
@@ -139,6 +142,14 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.value = _uiState.value.copy(
             isMuted = next,
             statusText = if (next) "Mic muted hai" else "Suzy sun rahi hai..."
+        )
+    }
+
+    fun toggleSpeaker() {
+        val next = !_uiState.value.isSpeakerOn
+        audioEngine.setSpeakerphone(next)
+        _uiState.value = _uiState.value.copy(
+            isSpeakerOn = next
         )
     }
 

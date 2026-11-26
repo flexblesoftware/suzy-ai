@@ -1,13 +1,17 @@
 package com.suzy.ai.audio
 
 import android.annotation.SuppressLint
+import android.content.Context
 import android.media.AudioAttributes
+import android.media.AudioDeviceInfo
 import android.media.AudioFormat
+import android.media.AudioManager
 import android.media.AudioRecord
 import android.media.AudioTrack
 import android.media.MediaRecorder
 import android.media.audiofx.AcousticEchoCanceler
 import android.media.audiofx.NoiseSuppressor
+import android.os.Build
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -15,8 +19,11 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlin.math.sqrt
 
-class AudioEngine(private val scope: CoroutineScope) {
-
+class AudioEngine(
+    context: Context,
+    private val scope: CoroutineScope
+) {
+    private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     private var audioRecord: AudioRecord? = null
     private var audioTrack: AudioTrack? = null
     private var echoCanceler: AcousticEchoCanceler? = null
@@ -26,9 +33,35 @@ class AudioEngine(private val scope: CoroutineScope) {
     @Volatile
     var isMuted: Boolean = false
 
+    @Volatile
+    var isSpeakerOn: Boolean = true
+
     companion object {
         const val INPUT_SAMPLE_RATE = 16000
         const val OUTPUT_SAMPLE_RATE = 24000
+    }
+
+    fun setSpeakerphone(enabled: Boolean) {
+        isSpeakerOn = enabled
+        try {
+            audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                val targetType = if (enabled) {
+                    AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
+                } else {
+                    AudioDeviceInfo.TYPE_BUILTIN_EARPIECE
+                }
+                val device = audioManager.availableCommunicationDevices.firstOrNull {
+                    it.type == targetType
+                }
+                if (device != null) {
+                    audioManager.setCommunicationDevice(device)
+                }
+            }
+            @Suppress("DEPRECATION")
+            audioManager.isSpeakerphoneOn = enabled
+        } catch (_: Exception) {
+        }
     }
 
     @SuppressLint("MissingPermission")
@@ -67,7 +100,7 @@ class AudioEngine(private val scope: CoroutineScope) {
         recorder.startRecording()
 
         recordJob = scope.launch(Dispatchers.IO) {
-            val buffer = ByteArray(1600) // ~50ms at 16kHz 16-bit mono
+            val buffer = ByteArray(1600)
             while (isActive) {
                 val read = recorder.read(buffer, 0, buffer.size)
                 if (read > 0) {
@@ -85,6 +118,8 @@ class AudioEngine(private val scope: CoroutineScope) {
 
     fun startPlayback() {
         stopPlayback()
+        setSpeakerphone(isSpeakerOn)
+
         val minBuf = AudioTrack.getMinBufferSize(
             OUTPUT_SAMPLE_RATE,
             AudioFormat.CHANNEL_OUT_MONO,
@@ -153,6 +188,15 @@ class AudioEngine(private val scope: CoroutineScope) {
     fun releaseAll() {
         stopRecording()
         stopPlayback()
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                audioManager.clearCommunicationDevice()
+            }
+            @Suppress("DEPRECATION")
+            audioManager.isSpeakerphoneOn = false
+            audioManager.mode = AudioManager.MODE_NORMAL
+        } catch (_: Exception) {
+        }
     }
 
     private fun computeRms(pcm: ByteArray): Float {

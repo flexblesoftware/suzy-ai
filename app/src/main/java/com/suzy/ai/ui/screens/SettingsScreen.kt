@@ -1,6 +1,7 @@
 package com.suzy.ai.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -59,6 +60,10 @@ fun SettingsScreen(
     var temperature by remember(current) { mutableFloatStateOf(current.temperature) }
     var showKey by remember { mutableStateOf(false) }
 
+    val modelPresets = listOf(
+        "Gemini 2.5 Live" to "models/gemini-2.5-flash-native-audio-preview-12-2025",
+        "Gemini 3.8 Live" to "models/gemini-3.8-live"
+    )
     val voices = listOf("Aoede", "Kore", "Leda", "Zephyr", "Puck")
 
     Column(
@@ -102,7 +107,26 @@ fun SettingsScreen(
             modifier = Modifier.fillMaxWidth()
         )
 
-        Spacer(modifier = Modifier.height(14.dp))
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Text("Live Model Presets", color = NeonCyan, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+        Spacer(modifier = Modifier.height(6.dp))
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+        ) {
+            modelPresets.forEach { (label, id) ->
+                FilterChip(
+                    selected = modelId.equals(id, ignoreCase = true),
+                    onClick = { modelId = id },
+                    label = { Text(label, fontSize = 12.sp) }
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
 
         OutlinedTextField(
             value = modelId,
@@ -112,13 +136,15 @@ fun SettingsScreen(
             modifier = Modifier.fillMaxWidth()
         )
 
-        Spacer(modifier = Modifier.height(14.dp))
+        Spacer(modifier = Modifier.height(16.dp))
 
         Text("Voice Name", color = NeonCyan, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
         Spacer(modifier = Modifier.height(6.dp))
         Row(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
         ) {
             voices.forEach { v ->
                 FilterChip(

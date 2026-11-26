@@ -59,6 +59,7 @@ class MainActivity : ComponentActivity() {
                         },
                         onStopClick = { vm.stopSession() },
                         onToggleMute = { vm.toggleMute() },
+                        onToggleSpeaker = { vm.toggleSpeaker() },
                         onInterruptClick = { vm.interruptSuzy() },
                         onOpenSettings = { showSettings = true }
                     )

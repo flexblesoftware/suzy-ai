@@ -19,9 +19,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.MicOff
+import androidx.compose.material.icons.rounded.PhoneInTalk
 import androidx.compose.material.icons.rounded.PowerSettingsNew
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Stop
+import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -55,6 +57,7 @@ fun HomeScreen(
     onStartClick: () -> Unit,
     onStopClick: () -> Unit,
     onToggleMute: () -> Unit,
+    onToggleSpeaker: () -> Unit,
     onInterruptClick: () -> Unit,
     onOpenSettings: () -> Unit
 ) {
@@ -89,26 +92,47 @@ fun HomeScreen(
                     letterSpacing = 3.sp
                 )
                 Text(
-                    text = "LIVE VOICE COMPANION",
-                    color = NeonCyan,
+                    text = if (uiState.isSpeakerOn) "LOUDSPEAKER MODE" else "EARPIECE MODE",
+                    color = if (uiState.isSpeakerOn) NeonCyan else NeonPurple,
                     fontSize = 11.sp,
                     letterSpacing = 1.5.sp
                 )
             }
 
-            IconButton(
-                onClick = onOpenSettings,
-                modifier = Modifier
-                    .size(46.dp)
-                    .clip(CircleShape)
-                    .background(SurfaceGlass)
-                    .border(1.dp, NeonPurple.copy(alpha = 0.4f), CircleShape)
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.Settings,
-                    contentDescription = "Settings",
-                    tint = TextPrimary
-                )
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                IconButton(
+                    onClick = onToggleSpeaker,
+                    modifier = Modifier
+                        .size(46.dp)
+                        .clip(CircleShape)
+                        .background(SurfaceGlass)
+                        .border(
+                            1.dp,
+                            if (uiState.isSpeakerOn) NeonCyan.copy(alpha = 0.8f) else NeonPurple.copy(alpha = 0.4f),
+                            CircleShape
+                        )
+                ) {
+                    Icon(
+                        imageVector = if (uiState.isSpeakerOn) Icons.Rounded.VolumeUp else Icons.Rounded.PhoneInTalk,
+                        contentDescription = if (uiState.isSpeakerOn) "Loudspeaker On" else "Earpiece Mode",
+                        tint = if (uiState.isSpeakerOn) NeonCyan else TextPrimary
+                    )
+                }
+
+                IconButton(
+                    onClick = onOpenSettings,
+                    modifier = Modifier
+                        .size(46.dp)
+                        .clip(CircleShape)
+                        .background(SurfaceGlass)
+                        .border(1.dp, NeonPurple.copy(alpha = 0.4f), CircleShape)
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Settings,
+                        contentDescription = "Settings",
+                        tint = TextPrimary
+                    )
+                }
             }
         }
 
