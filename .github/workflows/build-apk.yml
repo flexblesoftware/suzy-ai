@@ -1,4 +1,4 @@
-name: Build & Release Suzy APK
+name: Build & Release Signed Suzy APK
 
 on:
   push:
@@ -26,21 +26,29 @@ jobs:
         with:
           gradle-version: '8.7'
 
-      - name: Build Debug APK
-        run: gradle assembleDebug --no-daemon --stacktrace
+      - name: Decode Keystore
+        run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > suzy-release.jks
 
-      - name: Rename APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk Suzy-v1.0.apk
+      - name: Build Signed Release APK
+        env:
+          KEYSTORE_FILE: ${{ github.workspace }}/suzy-release.jks
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: gradle assembleRelease --no-daemon --stacktrace
+
+      - name: Rename Signed APK
+        run: cp app/build/outputs/apk/release/app-release.apk Suzy-v1.0.${{ github.run_number }}.apk
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Suzy-Debug-APK
-          path: Suzy-v1.0.apk
+          name: Suzy-Signed-APK
+          path: Suzy-v1.0.${{ github.run_number }}.apk
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.0.${{ github.run_number }}
           name: Suzy AI v1.0.${{ github.run_number }}
-          files: Suzy-v1.0.apk
+          files: Suzy-v1.0.${{ github.run_number }}.apk

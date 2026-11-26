@@ -11,11 +11,12 @@ import android.media.AudioTrack
 import android.media.MediaRecorder
 import android.media.ToneGenerator
 import android.media.audiofx.AcousticEchoCanceler
-import android.media.audiofx.NoiseSuppressor
 import android.os.Build
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlin.math.sqrt
@@ -28,8 +29,9 @@ class AudioEngine(
     private var audioRecord: AudioRecord? = null
     private var audioTrack: AudioTrack? = null
     private var echoCanceler: AcousticEchoCanceler? = null
-    private var noiseSuppressor: NoiseSuppressor? = null
     private var recordJob: Job? = null
+    private var playbackJob: Job? = null
+    private var playbackChannel: Channel<ByteArray>? = null
 
     @Volatile
     var isMuted: Boolean = false
@@ -40,6 +42,7 @@ class AudioEngine(
     companion object {
         const val INPUT_SAMPLE_RATE = 16000
         const val OUTPUT_SAMPLE_RATE = 24000
+        const val MIC_GAIN = 1.8f
     }
 
     fun playUiChime(connected: Boolean) {
@@ -48,7 +51,7 @@ class AudioEngine(
             val tone = if (connected) ToneGenerator.TONE_PROP_BEEP2 else ToneGenerator.TONE_PROP_NACK
             tg.startTone(tone, 140)
             scope.launch(Dispatchers.IO) {
-                kotlinx.coroutines.delay(220)
+                delay(220)
                 try { tg.release() } catch (_: Exception) {}
             }
         } catch (_: Exception) {
@@ -89,7 +92,7 @@ class AudioEngine(
             INPUT_SAMPLE_RATE,
             AudioFormat.CHANNEL_IN_MONO,
             AudioFormat.ENCODING_PCM_16BIT
-        ).coerceAtLeast(1280)
+        ).coerceAtLeast(3200)
 
         val recorder = AudioRecord(
             MediaRecorder.AudioSource.VOICE_COMMUNICATION,
@@ -104,17 +107,12 @@ class AudioEngine(
                 enabled = true
             }
         }
-        if (NoiseSuppressor.isAvailable()) {
-            noiseSuppressor = NoiseSuppressor.create(recorder.audioSessionId)?.apply {
-                enabled = true
-            }
-        }
 
         audioRecord = recorder
         recorder.startRecording()
 
         recordJob = scope.launch(Dispatchers.IO) {
-            val buffer = ByteArray(640)
+            val buffer = ByteArray(1600) // 50ms stable chunks at 16kHz 16-bit mono
             while (isActive) {
                 val read = recorder.read(buffer, 0, buffer.size)
                 if (read > 0) {
@@ -122,9 +120,9 @@ class AudioEngine(
                         onAmplitude(0f)
                         continue
                     }
-                    val chunk = buffer.copyOf(read)
-                    onAmplitude(computeRms(chunk))
-                    onAudioChunk(chunk)
+                    val boosted = applyMicGain(buffer, read, MIC_GAIN)
+                    onAmplitude(computeRms(boosted))
+                    onAudioChunk(boosted)
                 }
             }
         }
@@ -138,9 +136,9 @@ class AudioEngine(
             OUTPUT_SAMPLE_RATE,
             AudioFormat.CHANNEL_OUT_MONO,
             AudioFormat.ENCODING_PCM_16BIT
-        ).coerceAtLeast(2400)
+        ).coerceAtLeast(4800)
 
-        audioTrack = AudioTrack.Builder()
+        val track = AudioTrack.Builder()
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
@@ -154,21 +152,37 @@ class AudioEngine(
                     .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
                     .build()
             )
-            .setBufferSizeInBytes(minBuf)
+            .setBufferSizeInBytes(minBuf * 2)
             .setTransferMode(AudioTrack.MODE_STREAM)
             .setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)
             .build()
 
-        audioTrack?.play()
+        audioTrack = track
+        track.play()
+
+        val channel = Channel<ByteArray>(Channel.UNLIMITED)
+        playbackChannel = channel
+        playbackJob = scope.launch(Dispatchers.IO) {
+            for (chunk in channel) {
+                if (!isActive) break
+                try {
+                    track.write(chunk, 0, chunk.size, AudioTrack.WRITE_BLOCKING)
+                } catch (_: Exception) {
+                }
+            }
+        }
     }
 
     fun playPcmChunk(pcmBytes: ByteArray, onAmplitude: (Float) -> Unit) {
         onAmplitude(computeRms(pcmBytes))
-        audioTrack?.write(pcmBytes, 0, pcmBytes.size, AudioTrack.WRITE_BLOCKING)
+        playbackChannel?.trySend(pcmBytes)
     }
 
     fun flushPlayback() {
         try {
+            while (playbackChannel?.tryReceive()?.isSuccess == true) {
+                // Drain queued audio immediately for instant interruption
+            }
             audioTrack?.pause()
             audioTrack?.flush()
             audioTrack?.play()
@@ -181,17 +195,19 @@ class AudioEngine(
         recordJob = null
         try {
             echoCanceler?.release()
-            noiseSuppressor?.release()
             audioRecord?.stop()
             audioRecord?.release()
         } catch (_: Exception) {
         }
         echoCanceler = null
-        noiseSuppressor = null
         audioRecord = null
     }
 
     fun stopPlayback() {
+        playbackChannel?.close()
+        playbackChannel = null
+        playbackJob?.cancel()
+        playbackJob = null
         try {
             audioTrack?.stop()
             audioTrack?.release()
@@ -212,6 +228,19 @@ class AudioEngine(
             audioManager.mode = AudioManager.MODE_NORMAL
         } catch (_: Exception) {
         }
+    }
+
+    private fun applyMicGain(src: ByteArray, len: Int, gain: Float): ByteArray {
+        val out = ByteArray(len)
+        var i = 0
+        while (i < len - 1) {
+            val sample = ((src[i + 1].toInt() shl 8) or (src[i].toInt() and 0xFF)).toShort().toInt()
+            val boosted = (sample * gain).toInt().coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())
+            out[i] = (boosted and 0xFF).toByte()
+            out[i + 1] = ((boosted shr 8) and 0xFF).toByte()
+            i += 2
+        }
+        return out
     }
 
     private fun computeRms(pcm: ByteArray): Float {
