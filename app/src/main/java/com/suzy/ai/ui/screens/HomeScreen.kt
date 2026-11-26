@@ -2,6 +2,7 @@ package com.suzy.ai.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,12 +17,16 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.MicOff
 import androidx.compose.material.icons.rounded.PhoneInTalk
 import androidx.compose.material.icons.rounded.PowerSettingsNew
+import androidx.compose.material.icons.rounded.SentimentVerySatisfied
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Spa
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material3.Button
@@ -36,6 +41,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -51,6 +57,13 @@ import com.suzy.ai.ui.theme.TextSecondary
 import com.suzy.ai.viewmodel.SuzyState
 import com.suzy.ai.viewmodel.SuzyUiState
 
+private data class EmotionChip(
+    val label: String,
+    val icon: ImageVector,
+    val tint: Color,
+    val prompt: String
+)
+
 @Composable
 fun HomeScreen(
     uiState: SuzyUiState,
@@ -58,12 +71,40 @@ fun HomeScreen(
     onStopClick: () -> Unit,
     onToggleMute: () -> Unit,
     onToggleSpeaker: () -> Unit,
+    onQuickReaction: (String) -> Unit,
     onInterruptClick: () -> Unit,
     onOpenSettings: () -> Unit
 ) {
     val isActive = uiState.state == SuzyState.CONNECTING ||
         uiState.state == SuzyState.LISTENING ||
         uiState.state == SuzyState.SPEAKING
+
+    val emotions = listOf(
+        EmotionChip(
+            label = "Laugh",
+            icon = Icons.Rounded.SentimentVerySatisfied,
+            tint = NeonCyan,
+            prompt = "Zor se khul kar hanso aur koi cute funny si line bolo Hinglish mein!"
+        ),
+        EmotionChip(
+            label = "Love",
+            icon = Icons.Rounded.Favorite,
+            tint = NeonPink,
+            prompt = "Pyaar se soft romantic voice mein ek sweet si line bolo jaise girlfriend bolti hai."
+        ),
+        EmotionChip(
+            label = "Tease",
+            icon = Icons.Rounded.AutoAwesome,
+            tint = NeonPurple,
+            prompt = "Naughty aur playful tone mein mujhe thoda chidhao aur giggle karo!"
+        ),
+        EmotionChip(
+            label = "Care",
+            icon = Icons.Rounded.Spa,
+            tint = Color(0xFF34D399),
+            prompt = "Bahut pyaar se caring voice mein mera mood theek karo, bolo main hoon na."
+        )
+    )
 
     Box(
         modifier = Modifier
@@ -183,78 +224,116 @@ fun HomeScreen(
             }
         }
 
-        // Bottom Controls
-        Row(
+        // Bottom Controls + Clean Vector Emotion Triggers
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .align(Alignment.BottomCenter)
-                .padding(bottom = 16.dp),
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically
+                .padding(bottom = 12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
             if (isActive) {
-                IconButton(
-                    onClick = onToggleMute,
-                    modifier = Modifier
-                        .size(54.dp)
-                        .clip(CircleShape)
-                        .background(SurfaceGlass)
-                        .border(
-                            1.dp,
-                            if (uiState.isMuted) Color(0xFFEF4444) else NeonCyan.copy(alpha = 0.5f),
-                            CircleShape
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.padding(bottom = 16.dp)
+                ) {
+                    emotions.forEach { item ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(50))
+                                .background(SurfaceGlass.copy(alpha = 0.9f))
+                                .border(1.dp, item.tint.copy(alpha = 0.45f), RoundedCornerShape(50))
+                                .clickable { onQuickReaction(item.prompt) }
+                                .padding(horizontal = 12.dp, vertical = 8.dp)
+                        ) {
+                            Icon(
+                                imageVector = item.icon,
+                                contentDescription = item.label,
+                                tint = item.tint,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(5.dp))
+                            Text(
+                                text = item.label,
+                                color = TextPrimary,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    }
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (isActive) {
+                    IconButton(
+                        onClick = onToggleMute,
+                        modifier = Modifier
+                            .size(54.dp)
+                            .clip(CircleShape)
+                            .background(SurfaceGlass)
+                            .border(
+                                1.dp,
+                                if (uiState.isMuted) Color(0xFFEF4444) else NeonCyan.copy(alpha = 0.5f),
+                                CircleShape
+                            )
+                    ) {
+                        Icon(
+                            imageVector = if (uiState.isMuted) Icons.Rounded.MicOff else Icons.Rounded.Mic,
+                            contentDescription = "Mute",
+                            tint = if (uiState.isMuted) Color(0xFFEF4444) else TextPrimary
                         )
+                    }
+
+                    Spacer(modifier = Modifier.width(18.dp))
+                }
+
+                Button(
+                    onClick = { if (isActive) onStopClick() else onStartClick() },
+                    shape = RoundedCornerShape(32.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (isActive) Color(0xFFDC2626) else NeonPurple
+                    ),
+                    modifier = Modifier
+                        .height(60.dp)
+                        .width(190.dp)
                 ) {
                     Icon(
-                        imageVector = if (uiState.isMuted) Icons.Rounded.MicOff else Icons.Rounded.Mic,
-                        contentDescription = "Mute",
-                        tint = if (uiState.isMuted) Color(0xFFEF4444) else TextPrimary
+                        imageVector = if (isActive) Icons.Rounded.Stop else Icons.Rounded.PowerSettingsNew,
+                        contentDescription = if (isActive) "Stop" else "Start",
+                        tint = Color.White
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                        text = if (isActive) "STOP" else "START",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp,
+                        letterSpacing = 1.5.sp
                     )
                 }
 
-                Spacer(modifier = Modifier.width(18.dp))
-            }
-
-            Button(
-                onClick = { if (isActive) onStopClick() else onStartClick() },
-                shape = RoundedCornerShape(32.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (isActive) Color(0xFFDC2626) else NeonPurple
-                ),
-                modifier = Modifier
-                    .height(60.dp)
-                    .width(190.dp)
-            ) {
-                Icon(
-                    imageVector = if (isActive) Icons.Rounded.Stop else Icons.Rounded.PowerSettingsNew,
-                    contentDescription = if (isActive) "Stop" else "Start",
-                    tint = Color.White
-                )
-                Spacer(modifier = Modifier.width(10.dp))
-                Text(
-                    text = if (isActive) "STOP" else "START",
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp,
-                    letterSpacing = 1.5.sp
-                )
-            }
-
-            if (isActive) {
-                Spacer(modifier = Modifier.width(18.dp))
-                IconButton(
-                    onClick = onInterruptClick,
-                    modifier = Modifier
-                        .size(54.dp)
-                        .clip(CircleShape)
-                        .background(SurfaceGlass)
-                        .border(1.dp, NeonPink.copy(alpha = 0.5f), CircleShape)
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.GraphicEq,
-                        contentDescription = "Interrupt",
-                        tint = NeonPink
-                    )
+                if (isActive) {
+                    Spacer(modifier = Modifier.width(18.dp))
+                    IconButton(
+                        onClick = onInterruptClick,
+                        modifier = Modifier
+                            .size(54.dp)
+                            .clip(CircleShape)
+                            .background(SurfaceGlass)
+                            .border(1.dp, NeonPink.copy(alpha = 0.5f), CircleShape)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.GraphicEq,
+                            contentDescription = "Interrupt",
+                            tint = NeonPink
+                        )
+                    }
                 }
             }
         }
