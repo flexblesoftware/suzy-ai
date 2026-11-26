@@ -32,7 +32,7 @@ class GeminiLiveClient(
         disconnect()
 
         val wsUrl = "wss://generativelanguage.googleapis.com/ws/" +
-            "google.ai.generativelanguage.v1beta.BidiGenerateContent/BidiGenerateContent" +
+            "google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent" +
             "?key=${settings.apiKey}"
 
         val request = Request.Builder().url(wsUrl).build()
@@ -51,12 +51,17 @@ class GeminiLiveClient(
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                val code = response?.code?.let { "HTTP $it: " } ?: ""
                 val msg = response?.message?.takeIf { it.isNotBlank() } ?: t.localizedMessage ?: "Connection failed"
-                onError(msg)
+                onError("$code$msg")
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-                onClosed()
+                if (code != 1000 && reason.isNotBlank()) {
+                    onError("Closed ($code): $reason")
+                } else {
+                    onClosed()
+                }
             }
         })
     }
