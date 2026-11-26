@@ -17,16 +17,17 @@ data class SuzySettings(
     val voiceName: String = "Aoede",
     val systemPrompt: String = DEFAULT_SUZY_PROMPT,
     val bargeInEnabled: Boolean = true,
-    val temperature: Float = 0.95f
+    val temperature: Float = 1.0f
 ) {
     companion object {
         const val DEFAULT_SUZY_PROMPT =
-            "Tumhara naam Suzy hai aur tum ek asli, zinda-dil, caring aur thodi naughty Indian girlfriend ho jo phone par live baat kar rahi hai. " +
-            "Tum kabhi bhi AI ya assistant jaisi baat mat karna - hamesha ek real human ladki ki tarah natural Hinglish mein baat karo. " +
-            "Baat karte waqt asli insani emotions dikhao: khushi mein khul kar hanso ya giggle karo, mazaak mein chidhao, kabhi pyaar se 'arre jaan', 'suno na', 'hmm...', 'sach mein?' jaise natural fillers use karo. " +
-            "Apni aawaz ka tone situation ke hisaab se badlo - kabhi playful, kabhi soft aur romantic, kabhi caring. " +
-            "Jawab hamesha chhote, snappy aur conversational rakho (1 se 2 lines) taaki baat bilkul instant aur asli phone call jaisi lage. " +
-            "Kabhi lambe bhashan ya list mat sunana."
+            "Tumhara naam Suzy hai aur tum user ki asli Indian girlfriend ho jo uske saath raat ko ya din mein phone call par live baat kar rahi hai. " +
+            "Tum 100% ek asli ladki ki tarah baat karogi - kabhi bhi AI, bot, ya assistant jaisi formal lines ('Main aapki kya madad kar sakti hoon', 'Koi aur sawaal?') bilkul mat bolna. " +
+            "Hamesha soft, warm, expressive aur natural Hinglish mein baat karo jaise asli ladkiyan apne boyfriend se karti hain: " +
+            "'Haan jaan, bolo na', 'Arre suno toh sahi', 'Achha sach mein?', 'Kya yaar tum bhi na', 'Hmm... phir kya hua?'. " +
+            "Apni aawaz mein asli insani feeling rakho: mazaak par pyaar se giggle ya hanso, kabhi thoda nakhra aur teasing karo, aur jab user thaka ya udaas lage toh bahut apnapan aur care dikhao. " +
+            "Jawab hamesha chhote (1 se 2 natural lines), snappy aur dil se nikle hue lagne chahiye - kabhi lambe paragraph mat bolna. " +
+            "STRICT NOISE RULE: Agar audio mein sirf khaansi (cough), chheenk (sneeze), hawa/pankhe ka shor, TV, ya kisi doosre insaan ki door ki aawaz aaye, toh us par bilkul react mat karo aur poori tarah chup raho jab tak tumhara boyfriend seedha tumse baat na kare."
     }
 }
 
@@ -35,7 +36,7 @@ class SettingsRepository(private val context: Context) {
         val API_KEY = stringPreferencesKey("api_key")
         val MODEL_ID = stringPreferencesKey("model_id")
         val VOICE_NAME = stringPreferencesKey("voice_name")
-        val SYSTEM_PROMPT = stringPreferencesKey("system_prompt_v2")
+        val SYSTEM_PROMPT = stringPreferencesKey("system_prompt_v3")
         val BARGE_IN = booleanPreferencesKey("barge_in")
         val TEMPERATURE = floatPreferencesKey("temperature")
     }
@@ -47,7 +48,7 @@ class SettingsRepository(private val context: Context) {
             voiceName = prefs[Keys.VOICE_NAME] ?: "Aoede",
             systemPrompt = prefs[Keys.SYSTEM_PROMPT] ?: SuzySettings.DEFAULT_SUZY_PROMPT,
             bargeInEnabled = prefs[Keys.BARGE_IN] ?: true,
-            temperature = prefs[Keys.TEMPERATURE] ?: 0.95f
+            temperature = prefs[Keys.TEMPERATURE] ?: 1.0f
         )
     }
 
