@@ -165,14 +165,6 @@ class GeminiLiveClient(
                         })
                     })
                 })
-                put("realtimeInputConfig", JSONObject().apply {
-                    put("automaticActivityDetection", JSONObject().apply {
-                        put("startOfSpeechSensitivity", "START_SENSITIVITY_LOW")
-                        put("endOfSpeechSensitivity", "END_SENSITIVITY_HIGH")
-                        put("prefixPaddingMs", 200)
-                        put("silenceDurationMs", 450)
-                    })
-                })
                 put("tools", buildJarvisTools())
                 put("systemInstruction", JSONObject().apply {
                     put("parts", JSONArray().put(JSONObject().apply {

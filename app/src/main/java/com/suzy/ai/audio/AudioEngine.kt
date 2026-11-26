@@ -20,7 +20,6 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlin.math.max
 import kotlin.math.sqrt
 
 class AudioEngine(
@@ -45,7 +44,7 @@ class AudioEngine(
     companion object {
         const val INPUT_SAMPLE_RATE = 16000
         const val OUTPUT_SAMPLE_RATE = 24000
-        const val MIC_GAIN = 1.15f
+        const val MIC_GAIN = 1.5f
     }
 
     fun playUiChime(connected: Boolean) {
@@ -121,81 +120,16 @@ class AudioEngine(
 
         recordJob = scope.launch(Dispatchers.IO) {
             val buffer = ByteArray(1600) // 50ms chunks at 16kHz 16-bit mono
-            val silenceChunk = ByteArray(1600)
-            val preBuffer = ArrayDeque<ByteArray>(4)
-
-            var ambientNoiseFloor = 0.015f
-            var voicedFrameStreak = 0
-            var gateOpen = false
-            var hangoverFrames = 0
-
             while (isActive) {
                 val read = recorder.read(buffer, 0, buffer.size)
                 if (read > 0) {
                     if (isMuted) {
-                        gateOpen = false
-                        voicedFrameStreak = 0
-                        preBuffer.clear()
                         onAmplitude(0f)
-                        onAudioChunk(silenceChunk)
                         continue
                     }
-
                     val chunk = applyMicGain(buffer, read, MIC_GAIN)
-                    val rms = computeRms(chunk)
-                    val zcr = computeZeroCrossingRate(chunk)
-
-                    // Close-mic primary voice threshold (blocks distant voices & fan/TV noise)
-                    val dynamicThreshold = max(0.055f, ambientNoiseFloor * 2.8f)
-
-                    // Human voiced speech has lower ZCR (0.01..0.28); sneezes/coughs/claps have high ZCR or brief spikes
-                    val isLikelyHumanVoice = rms > dynamicThreshold && zcr in 0.01f..0.28f
-
-                    if (!gateOpen) {
-                        if (isLikelyHumanVoice) {
-                            voicedFrameStreak++
-                            if (preBuffer.size >= 3) preBuffer.removeFirst()
-                            preBuffer.addLast(chunk)
-
-                            // Require 3 consecutive voiced frames (~150ms) to reject sudden coughs/sneezes
-                            if (voicedFrameStreak >= 3) {
-                                gateOpen = true
-                                hangoverFrames = 14 // ~700ms smooth tail so sentences never clip
-                                while (preBuffer.isNotEmpty()) {
-                                    onAudioChunk(preBuffer.removeFirst())
-                                }
-                                onAmplitude(rms)
-                            } else {
-                                onAmplitude(0f)
-                                onAudioChunk(silenceChunk)
-                            }
-                        } else {
-                            voicedFrameStreak = 0
-                            preBuffer.clear()
-                            // Slowly adapt background noise floor when quiet
-                            if (rms < 0.08f) {
-                                ambientNoiseFloor = (ambientNoiseFloor * 0.96f) + (rms * 0.04f)
-                            }
-                            onAmplitude(0f)
-                            onAudioChunk(silenceChunk)
-                        }
-                    } else {
-                        if (rms > dynamicThreshold * 0.7f && zcr <= 0.34f) {
-                            hangoverFrames = 14
-                        } else {
-                            hangoverFrames--
-                        }
-
-                        if (hangoverFrames > 0) {
-                            onAmplitude(rms)
-                            onAudioChunk(chunk)
-                        } else {
-                            gateOpen = false
-                            voicedFrameStreak = 0
-                            onAmplitude(0f)
-                            onAudioChunk(silenceChunk)
-                        }
-                    }
+                    onAmplitude(computeRms(chunk))
+                    onAudioChunk(chunk)
                 }
             }
         }
@@ -254,7 +188,7 @@ class AudioEngine(
     fun flushPlayback() {
         try {
             while (playbackChannel?.tryReceive()?.isSuccess == true) {
-                // Drain queued audio immediately for instant interruption
+                // Drain queued audio immediately
             }
             audioTrack?.pause()
             audioTrack?.flush()
@@ -331,24 +265,6 @@ class AudioEngine(
         }
         if (count == 0) return 0f
         val rms = sqrt(sum / count) / 32768.0
-        return (rms * 4.2).toFloat().coerceIn(0f, 1f)
-    }
-
-    private fun computeZeroCrossingRate(pcm: ByteArray): Float {
-        if (pcm.size < 4) return 0f
-        var crossings = 0
-        var prevSample = ((pcm[1].toInt() shl 8) or (pcm[0].toInt() and 0xFF)).toShort().toInt()
-        var count = 1
-        var i = 2
-        while (i < pcm.size - 1) {
-            val currSample = ((pcm[i + 1].toInt() shl 8) or (pcm[i].toInt() and 0xFF)).toShort().toInt()
-            if ((prevSample >= 0 && currSample < 0) || (prevSample < 0 && currSample >= 0)) {
-                crossings++
-            }
-            prevSample = currSample
-            count++
-            i += 2
-        }
-        return if (count > 0) crossings.toFloat() / count.toFloat() else 0f
+        return (rms * 4.5).toFloat().coerceIn(0f, 1f)
     }
 }
