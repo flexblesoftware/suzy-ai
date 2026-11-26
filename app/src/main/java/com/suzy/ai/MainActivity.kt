@@ -60,6 +60,7 @@ class MainActivity : ComponentActivity() {
                         onStopClick = { vm.stopSession() },
                         onToggleMute = { vm.toggleMute() },
                         onToggleSpeaker = { vm.toggleSpeaker() },
+                        onQuickReaction = { vm.sendQuickReaction(it) },
                         onInterruptClick = { vm.interruptSuzy() },
                         onOpenSettings = { showSettings = true }
                     )

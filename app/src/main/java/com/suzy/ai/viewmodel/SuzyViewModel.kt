@@ -48,6 +48,7 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
     private val liveClient = GeminiLiveClient(
         onConnected = {
             audioEngine.setSpeakerphone(_uiState.value.isSpeakerOn)
+            audioEngine.playUiChime(true)
             audioEngine.startPlayback()
             audioEngine.startRecording(
                 onAudioChunk = { pcm -> liveClientSend(pcm) },
@@ -131,6 +132,7 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun stopSession() {
+        audioEngine.playUiChime(false)
         liveClient.disconnect()
         audioEngine.releaseAll()
         _uiState.value = SuzyUiState(isSpeakerOn = _uiState.value.isSpeakerOn)
@@ -151,6 +153,11 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.value = _uiState.value.copy(
             isSpeakerOn = next
         )
+    }
+
+    fun sendQuickReaction(prompt: String) {
+        audioEngine.flushPlayback()
+        liveClient.sendReactionPrompt(prompt)
     }
 
     fun interruptSuzy() {

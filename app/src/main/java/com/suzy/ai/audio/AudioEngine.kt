@@ -9,6 +9,7 @@ import android.media.AudioManager
 import android.media.AudioRecord
 import android.media.AudioTrack
 import android.media.MediaRecorder
+import android.media.ToneGenerator
 import android.media.audiofx.AcousticEchoCanceler
 import android.media.audiofx.NoiseSuppressor
 import android.os.Build
@@ -39,6 +40,19 @@ class AudioEngine(
     companion object {
         const val INPUT_SAMPLE_RATE = 16000
         const val OUTPUT_SAMPLE_RATE = 24000
+    }
+
+    fun playUiChime(connected: Boolean) {
+        try {
+            val tg = ToneGenerator(AudioManager.STREAM_VOICE_CALL, 55)
+            val tone = if (connected) ToneGenerator.TONE_PROP_BEEP2 else ToneGenerator.TONE_PROP_NACK
+            tg.startTone(tone, 140)
+            scope.launch(Dispatchers.IO) {
+                kotlinx.coroutines.delay(220)
+                try { tg.release() } catch (_: Exception) {}
+            }
+        } catch (_: Exception) {
+        }
     }
 
     fun setSpeakerphone(enabled: Boolean) {
@@ -75,7 +89,7 @@ class AudioEngine(
             INPUT_SAMPLE_RATE,
             AudioFormat.CHANNEL_IN_MONO,
             AudioFormat.ENCODING_PCM_16BIT
-        ).coerceAtLeast(3200)
+        ).coerceAtLeast(1280)
 
         val recorder = AudioRecord(
             MediaRecorder.AudioSource.VOICE_COMMUNICATION,
@@ -100,7 +114,7 @@ class AudioEngine(
         recorder.startRecording()
 
         recordJob = scope.launch(Dispatchers.IO) {
-            val buffer = ByteArray(1600)
+            val buffer = ByteArray(640)
             while (isActive) {
                 val read = recorder.read(buffer, 0, buffer.size)
                 if (read > 0) {
@@ -124,7 +138,7 @@ class AudioEngine(
             OUTPUT_SAMPLE_RATE,
             AudioFormat.CHANNEL_OUT_MONO,
             AudioFormat.ENCODING_PCM_16BIT
-        ).coerceAtLeast(4800)
+        ).coerceAtLeast(2400)
 
         audioTrack = AudioTrack.Builder()
             .setAudioAttributes(
@@ -140,8 +154,9 @@ class AudioEngine(
                     .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
                     .build()
             )
-            .setBufferSizeInBytes(minBuf * 2)
+            .setBufferSizeInBytes(minBuf)
             .setTransferMode(AudioTrack.MODE_STREAM)
+            .setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)
             .build()
 
         audioTrack?.play()
@@ -149,7 +164,7 @@ class AudioEngine(
 
     fun playPcmChunk(pcmBytes: ByteArray, onAmplitude: (Float) -> Unit) {
         onAmplitude(computeRms(pcmBytes))
-        audioTrack?.write(pcmBytes, 0, pcmBytes.size)
+        audioTrack?.write(pcmBytes, 0, pcmBytes.size, AudioTrack.WRITE_BLOCKING)
     }
 
     fun flushPlayback() {

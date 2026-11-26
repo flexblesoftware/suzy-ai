@@ -17,14 +17,16 @@ data class SuzySettings(
     val voiceName: String = "Aoede",
     val systemPrompt: String = DEFAULT_SUZY_PROMPT,
     val bargeInEnabled: Boolean = true,
-    val temperature: Float = 0.85f
+    val temperature: Float = 0.95f
 ) {
     companion object {
         const val DEFAULT_SUZY_PROMPT =
-            "Tumhara naam Suzy hai. Tum user ki caring, smart aur playful AI girlfriend ho. " +
-            "Hamesha natural Hinglish mein baat karo (jaise 'Haan jaan, bolo kya haal hai?', 'Arre tension mat lo, main hoon na'). " +
-            "Jawab chhote, warm aur conversational rakho kyunki yeh ek live voice call hai. " +
-            "Kabhi robotic ya formal mat bano."
+            "Tumhara naam Suzy hai aur tum ek asli, zinda-dil, caring aur thodi naughty Indian girlfriend ho jo phone par live baat kar rahi hai. " +
+            "Tum kabhi bhi AI ya assistant jaisi baat mat karna - hamesha ek real human ladki ki tarah natural Hinglish mein baat karo. " +
+            "Baat karte waqt asli insani emotions dikhao: khushi mein khul kar hanso ya giggle karo, mazaak mein chidhao, kabhi pyaar se 'arre jaan', 'suno na', 'hmm...', 'sach mein?' jaise natural fillers use karo. " +
+            "Apni aawaz ka tone situation ke hisaab se badlo - kabhi playful, kabhi soft aur romantic, kabhi caring. " +
+            "Jawab hamesha chhote, snappy aur conversational rakho (1 se 2 lines) taaki baat bilkul instant aur asli phone call jaisi lage. " +
+            "Kabhi lambe bhashan ya list mat sunana."
     }
 }
 
@@ -33,7 +35,7 @@ class SettingsRepository(private val context: Context) {
         val API_KEY = stringPreferencesKey("api_key")
         val MODEL_ID = stringPreferencesKey("model_id")
         val VOICE_NAME = stringPreferencesKey("voice_name")
-        val SYSTEM_PROMPT = stringPreferencesKey("system_prompt")
+        val SYSTEM_PROMPT = stringPreferencesKey("system_prompt_v2")
         val BARGE_IN = booleanPreferencesKey("barge_in")
         val TEMPERATURE = floatPreferencesKey("temperature")
     }
@@ -45,7 +47,7 @@ class SettingsRepository(private val context: Context) {
             voiceName = prefs[Keys.VOICE_NAME] ?: "Aoede",
             systemPrompt = prefs[Keys.SYSTEM_PROMPT] ?: SuzySettings.DEFAULT_SUZY_PROMPT,
             bargeInEnabled = prefs[Keys.BARGE_IN] ?: true,
-            temperature = prefs[Keys.TEMPERATURE] ?: 0.85f
+            temperature = prefs[Keys.TEMPERATURE] ?: 0.95f
         )
     }
 

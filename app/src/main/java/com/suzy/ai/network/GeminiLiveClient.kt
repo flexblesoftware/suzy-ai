@@ -87,6 +87,14 @@ class GeminiLiveClient(
                         })
                     })
                 })
+                put("realtimeInputConfig", JSONObject().apply {
+                    put("automaticActivityDetection", JSONObject().apply {
+                        put("startOfSpeechSensitivity", "START_SENSITIVITY_HIGH")
+                        put("endOfSpeechSensitivity", "END_SENSITIVITY_HIGH")
+                        put("prefixPaddingMs", 100)
+                        put("silenceDurationMs", 250)
+                    })
+                })
                 put("systemInstruction", JSONObject().apply {
                     put("parts", JSONArray().put(JSONObject().apply {
                         put("text", settings.systemPrompt)
@@ -106,6 +114,22 @@ class GeminiLiveClient(
                     put("mimeType", "audio/pcm;rate=16000")
                     put("data", b64)
                 }))
+            })
+        }
+        ws.send(payload.toString())
+    }
+
+    fun sendReactionPrompt(promptText: String) {
+        val ws = webSocket ?: return
+        val payload = JSONObject().apply {
+            put("clientContent", JSONObject().apply {
+                put("turns", JSONArray().put(JSONObject().apply {
+                    put("role", "user")
+                    put("parts", JSONArray().put(JSONObject().apply {
+                        put("text", promptText)
+                    }))
+                }))
+                put("turnComplete", true)
             })
         }
         ws.send(payload.toString())
