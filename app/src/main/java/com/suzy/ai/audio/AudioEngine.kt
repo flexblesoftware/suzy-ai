@@ -44,16 +44,15 @@ class AudioEngine(
     companion object {
         const val INPUT_SAMPLE_RATE = 16000
         const val OUTPUT_SAMPLE_RATE = 24000
-        const val MIC_GAIN = 1.5f
     }
 
     fun playUiChime(connected: Boolean) {
         try {
-            val tg = ToneGenerator(AudioManager.STREAM_VOICE_CALL, 55)
+            val tg = ToneGenerator(AudioManager.STREAM_VOICE_CALL, 50)
             val tone = if (connected) ToneGenerator.TONE_PROP_BEEP2 else ToneGenerator.TONE_PROP_NACK
-            tg.startTone(tone, 140)
+            tg.startTone(tone, 120)
             scope.launch(Dispatchers.IO) {
-                delay(220)
+                delay(200)
                 try { tg.release() } catch (_: Exception) {}
             }
         } catch (_: Exception) {
@@ -119,7 +118,7 @@ class AudioEngine(
         recorder.startRecording()
 
         recordJob = scope.launch(Dispatchers.IO) {
-            val buffer = ByteArray(1600) // 50ms chunks at 16kHz 16-bit mono
+            val buffer = ByteArray(1600)
             while (isActive) {
                 val read = recorder.read(buffer, 0, buffer.size)
                 if (read > 0) {
@@ -127,7 +126,7 @@ class AudioEngine(
                         onAmplitude(0f)
                         continue
                     }
-                    val chunk = applyMicGain(buffer, read, MIC_GAIN)
+                    val chunk = buffer.copyOf(read)
                     onAmplitude(computeRms(chunk))
                     onAudioChunk(chunk)
                 }
@@ -161,7 +160,6 @@ class AudioEngine(
             )
             .setBufferSizeInBytes(minBuf * 2)
             .setTransferMode(AudioTrack.MODE_STREAM)
-            .setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)
             .build()
 
         audioTrack = track
@@ -173,7 +171,7 @@ class AudioEngine(
             for (chunk in channel) {
                 if (!isActive) break
                 try {
-                    track.write(chunk, 0, chunk.size, AudioTrack.WRITE_BLOCKING)
+                    track.write(chunk, 0, chunk.size)
                 } catch (_: Exception) {
                 }
             }
@@ -188,7 +186,7 @@ class AudioEngine(
     fun flushPlayback() {
         try {
             while (playbackChannel?.tryReceive()?.isSuccess == true) {
-                // Drain queued audio immediately
+                // Drain queued audio
             }
             audioTrack?.pause()
             audioTrack?.flush()
@@ -237,19 +235,6 @@ class AudioEngine(
             audioManager.mode = AudioManager.MODE_NORMAL
         } catch (_: Exception) {
         }
-    }
-
-    private fun applyMicGain(src: ByteArray, len: Int, gain: Float): ByteArray {
-        val out = ByteArray(len)
-        var i = 0
-        while (i < len - 1) {
-            val sample = ((src[i + 1].toInt() shl 8) or (src[i].toInt() and 0xFF)).toShort().toInt()
-            val boosted = (sample * gain).toInt().coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())
-            out[i] = (boosted and 0xFF).toByte()
-            out[i + 1] = ((boosted shr 8) and 0xFF).toByte()
-            i += 2
-        }
-        return out
     }
 
     private fun computeRms(pcm: ByteArray): Float {

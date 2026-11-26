@@ -67,83 +67,6 @@ class GeminiLiveClient(
         })
     }
 
-    private fun buildJarvisTools(): JSONArray {
-        val declarations = JSONArray()
-
-        declarations.put(JSONObject().apply {
-            put("name", "toggle_flashlight")
-            put("description", "Turn the phone flashlight torch ON or OFF")
-            put("parameters", JSONObject().apply {
-                put("type", "OBJECT")
-                put("properties", JSONObject().apply {
-                    put("enable", JSONObject().apply {
-                        put("type", "BOOLEAN")
-                        put("description", "true to turn ON, false to turn OFF")
-                    })
-                })
-                put("required", JSONArray().put("enable"))
-            })
-        })
-
-        declarations.put(JSONObject().apply {
-            put("name", "get_device_status")
-            put("description", "Get current phone battery percentage, charging status, and current date/time")
-            put("parameters", JSONObject().apply {
-                put("type", "OBJECT")
-                put("properties", JSONObject())
-            })
-        })
-
-        declarations.put(JSONObject().apply {
-            put("name", "open_app")
-            put("description", "Open an installed Android app like YouTube, WhatsApp, Instagram, Chrome, Spotify, Settings")
-            put("parameters", JSONObject().apply {
-                put("type", "OBJECT")
-                put("properties", JSONObject().apply {
-                    put("app_name", JSONObject().apply {
-                        put("type", "STRING")
-                        put("description", "Name of the app to open")
-                    })
-                })
-                put("required", JSONArray().put("app_name"))
-            })
-        })
-
-        declarations.put(JSONObject().apply {
-            put("name", "set_volume")
-            put("description", "Set phone voice volume percentage from 0 to 100")
-            put("parameters", JSONObject().apply {
-                put("type", "OBJECT")
-                put("properties", JSONObject().apply {
-                    put("level_percent", JSONObject().apply {
-                        put("type", "INTEGER")
-                        put("description", "Volume percentage 0 to 100")
-                    })
-                })
-                put("required", JSONArray().put("level_percent"))
-            })
-        })
-
-        declarations.put(JSONObject().apply {
-            put("name", "web_search")
-            put("description", "Search something on Google in the phone browser")
-            put("parameters", JSONObject().apply {
-                put("type", "OBJECT")
-                put("properties", JSONObject().apply {
-                    put("query", JSONObject().apply {
-                        put("type", "STRING")
-                        put("description", "Search query")
-                    })
-                })
-                put("required", JSONArray().put("query"))
-            })
-        })
-
-        return JSONArray().put(JSONObject().apply {
-            put("functionDeclarations", declarations)
-        })
-    }
-
     private fun sendSetupMessage(ws: WebSocket, settings: SuzySettings) {
         val modelName = if (settings.modelId.startsWith("models/")) {
             settings.modelId
@@ -165,7 +88,6 @@ class GeminiLiveClient(
                         })
                     })
                 })
-                put("tools", buildJarvisTools())
                 put("systemInstruction", JSONObject().apply {
                     put("parts", JSONArray().put(JSONObject().apply {
                         put("text", settings.systemPrompt)
@@ -228,23 +150,6 @@ class GeminiLiveClient(
 
             if (json.has("setupComplete")) {
                 onConnected()
-                return
-            }
-
-            val toolCall = json.optJSONObject("toolCall")
-            if (toolCall != null) {
-                val calls = toolCall.optJSONArray("functionCalls")
-                if (calls != null) {
-                    for (i in 0 until calls.length()) {
-                        val call = calls.optJSONObject(i) ?: continue
-                        val id = call.optString("id", "")
-                        val name = call.optString("name", "")
-                        val args = call.optJSONObject("args") ?: JSONObject()
-                        if (name.isNotBlank()) {
-                            onToolCall(id, name, args)
-                        }
-                    }
-                }
                 return
             }
 
