@@ -91,6 +91,14 @@ class GeminiLiveClient(
                     })
                 })
             })
+            put("realtimeInputConfig", JSONObject().apply {
+                put("automaticActivityDetection", JSONObject().apply {
+                    put("startOfSpeechSensitivity", "START_SENSITIVITY_HIGH")
+                    put("endOfSpeechSensitivity", "END_SENSITIVITY_HIGH")
+                    put("prefixPaddingMs", 80)
+                    put("silenceDurationMs", 250)
+                })
+            })
             put("outputAudioTranscription", JSONObject())
             put("systemInstruction", JSONObject().apply {
                 put("parts", JSONArray().put(JSONObject().apply {
@@ -107,11 +115,10 @@ class GeminiLiveClient(
 
     fun sendPcmAudio(pcmBytes: ByteArray) {
         val ws = webSocket ?: return
-        if (ws.queueSize() > 65536L) return
+        if (ws.queueSize() > 32768L) return
 
         val b64 = Base64.encodeToString(pcmBytes, Base64.NO_WRAP)
         val payload = if (isGemini38) {
-            // Gemini 3.8 Live official WebSocket audio format
             JSONObject().apply {
                 put("realtimeInput", JSONObject().apply {
                     put("audio", JSONObject().apply {
@@ -121,7 +128,6 @@ class GeminiLiveClient(
                 })
             }
         } else {
-            // Legacy 2.5 Live format
             JSONObject().apply {
                 put("realtimeInput", JSONObject().apply {
                     put("mediaChunks", JSONArray().put(JSONObject().apply {
