@@ -41,6 +41,7 @@ data class SuzySettings(
     val voiceName: String = "Aoede",
     val activePersonaName: String = "Suzy",
     val activeMoodId: String = "romantic",
+    val customNote: String = "",
     val systemPrompt: String = DEFAULT_SUZY_PROMPT,
     val bargeInEnabled: Boolean = true,
     val captionsEnabled: Boolean = true,
@@ -58,7 +59,8 @@ class SettingsRepository(private val context: Context) {
         val VOICE_NAME = stringPreferencesKey("voice_name")
         val PERSONA_NAME = stringPreferencesKey("persona_name")
         val ACTIVE_MOOD = stringPreferencesKey("active_mood")
-        val SYSTEM_PROMPT = stringPreferencesKey("system_prompt_v4")
+        val CUSTOM_NOTE = stringPreferencesKey("custom_user_note")
+        val SYSTEM_PROMPT = stringPreferencesKey("system_prompt_v5")
         val BARGE_IN = booleanPreferencesKey("barge_in")
         val CAPTIONS_ENABLED = booleanPreferencesKey("captions_enabled")
         val TEMPERATURE = floatPreferencesKey("temperature")
@@ -68,13 +70,18 @@ class SettingsRepository(private val context: Context) {
     }
 
     val settingsFlow: Flow<SuzySettings> = context.dataStore.data.map { prefs ->
+        val personaName = prefs[Keys.PERSONA_NAME] ?: "Suzy"
+        val storedPrompt = prefs[Keys.SYSTEM_PROMPT] ?: SuzySettings.DEFAULT_SUZY_PROMPT
+        val resolvedPrompt = SuzyCatalog.resolveHardcodedPrompt(personaName, storedPrompt)
+
         SuzySettings(
             apiKey = prefs[Keys.API_KEY] ?: "",
             modelId = prefs[Keys.MODEL_ID] ?: "models/gemini-3.8-live",
             voiceName = prefs[Keys.VOICE_NAME] ?: "Aoede",
-            activePersonaName = prefs[Keys.PERSONA_NAME] ?: "Suzy",
+            activePersonaName = personaName,
             activeMoodId = prefs[Keys.ACTIVE_MOOD] ?: "romantic",
-            systemPrompt = prefs[Keys.SYSTEM_PROMPT] ?: SuzySettings.DEFAULT_SUZY_PROMPT,
+            customNote = prefs[Keys.CUSTOM_NOTE] ?: "",
+            systemPrompt = resolvedPrompt,
             bargeInEnabled = prefs[Keys.BARGE_IN] ?: true,
             captionsEnabled = prefs[Keys.CAPTIONS_ENABLED] ?: true,
             temperature = prefs[Keys.TEMPERATURE] ?: 0.95f
@@ -94,13 +101,18 @@ class SettingsRepository(private val context: Context) {
     }
 
     suspend fun saveSettings(settings: SuzySettings) {
+        val resolvedPrompt = SuzyCatalog.resolveHardcodedPrompt(
+            settings.activePersonaName,
+            settings.systemPrompt
+        )
         context.dataStore.edit { prefs ->
             prefs[Keys.API_KEY] = settings.apiKey.trim()
             prefs[Keys.MODEL_ID] = settings.modelId.trim()
             prefs[Keys.VOICE_NAME] = settings.voiceName.trim()
             prefs[Keys.PERSONA_NAME] = settings.activePersonaName.trim()
             prefs[Keys.ACTIVE_MOOD] = settings.activeMoodId.trim()
-            prefs[Keys.SYSTEM_PROMPT] = settings.systemPrompt.trim()
+            prefs[Keys.CUSTOM_NOTE] = settings.customNote.trim()
+            prefs[Keys.SYSTEM_PROMPT] = resolvedPrompt
             prefs[Keys.BARGE_IN] = settings.bargeInEnabled
             prefs[Keys.CAPTIONS_ENABLED] = settings.captionsEnabled
             prefs[Keys.TEMPERATURE] = settings.temperature
@@ -137,13 +149,15 @@ class SettingsRepository(private val context: Context) {
         voiceName: String,
         accentHex: Long,
         prompt: String
-    ) {
+    ): PersonaProfile? {
         val cleanName = name.trim()
-        if (cleanName.isBlank()) return
+        if (cleanName.isBlank()) return null
+        val cleanRole = role.trim().ifBlank { "Custom Companion" }
         val newPersona = PersonaProfile(
             id = "custom_${UUID.randomUUID()}",
             name = cleanName,
-            role = role.trim().ifBlank { "Custom Companion" },
+            role = cleanRole,
+            tagline = cleanRole,
             voiceName = voiceName,
             temperature = 0.95f,
             accentColor = Color(accentHex),
@@ -157,6 +171,7 @@ class SettingsRepository(private val context: Context) {
             val updated = listOf(newPersona) + current.filterNot { it.name.equals(cleanName, ignoreCase = true) }
             prefs[Keys.CUSTOM_PERSONAS_JSON] = serializeCustomPersonas(updated)
         }
+        return newPersona
     }
 
     suspend fun deleteCustomPersona(id: String) {
@@ -221,11 +236,13 @@ class SettingsRepository(private val context: Context) {
                 for (i in 0 until arr.length()) {
                     val obj = arr.optJSONObject(i) ?: continue
                     val hex = obj.optLong("accentColorHex", 0xFFEC4899L)
+                    val role = obj.optString("role", "Custom")
                     add(
                         PersonaProfile(
                             id = obj.optString("id"),
                             name = obj.optString("name"),
-                            role = obj.optString("role", "Custom"),
+                            role = role,
+                            tagline = role,
                             voiceName = obj.optString("voiceName", "Aoede"),
                             temperature = obj.optDouble("temperature", 0.95).toFloat(),
                             accentColor = Color(hex),

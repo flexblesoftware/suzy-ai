@@ -46,6 +46,7 @@ import com.suzy.ai.ui.theme.NeonCyan
 import com.suzy.ai.ui.theme.NeonPurple
 import com.suzy.ai.ui.theme.TextPrimary
 import com.suzy.ai.ui.theme.TextSecondary
+import java.util.Locale
 
 @Composable
 fun SettingsScreen(
@@ -57,7 +58,7 @@ fun SettingsScreen(
     var modelId by remember(current) { mutableStateOf(current.modelId) }
     var voiceName by remember(current) { mutableStateOf(current.voiceName) }
     var personaName by remember(current) { mutableStateOf(current.activePersonaName) }
-    var systemPrompt by remember(current) { mutableStateOf(current.systemPrompt) }
+    var customNote by remember(current) { mutableStateOf(current.customNote) }
     var bargeIn by remember(current) { mutableStateOf(current.bargeInEnabled) }
     var captions by remember(current) { mutableStateOf(current.captionsEnabled) }
     var temperature by remember(current) { mutableFloatStateOf(current.temperature) }
@@ -72,18 +73,24 @@ fun SettingsScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 18.dp, vertical = 16.dp)
+                .padding(horizontal = 18.dp, vertical = 14.dp)
                 .verticalScroll(rememberScrollState())
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                 IconButton(onClick = onBack) {
                     Icon(Icons.Rounded.ArrowBack, contentDescription = "Back", tint = TextPrimary)
                 }
-                Text("AI Configuration", color = TextPrimary, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                Column {
+                    Text("AI Configuration", color = TextPrimary, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                    Text("Save karte hi live call mein turant apply hoga", color = NeonCyan, fontSize = 11.sp)
+                }
             }
 
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
+            // Section 1: API & Live Model
+            Text("SECTION 1 • API & LIVE VOICE ENGINE", color = TextSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+            Spacer(modifier = Modifier.height(6.dp))
             GlassCard(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     OutlinedTextField(
@@ -103,7 +110,7 @@ fun SettingsScreen(
                         modifier = Modifier.fillMaxWidth()
                     )
 
-                    Spacer(modifier = Modifier.height(14.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
 
                     Text("Live Model Presets", color = NeonCyan, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                     Row(
@@ -122,7 +129,7 @@ fun SettingsScreen(
                     OutlinedTextField(
                         value = modelId,
                         onValueChange = { modelId = it },
-                        label = { Text("Custom Model ID") },
+                        label = { Text("Model ID") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -131,8 +138,31 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(14.dp))
 
+            // Section 2: Persona, Voice & Personal Note (No raw hardcoded prompt wall)
+            Text("SECTION 2 • PERSONA & VOICE TUNING", color = TextSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+            Spacer(modifier = Modifier.height(6.dp))
             GlassCard(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp)) {
+                    Text("Quick Persona Switch (Hardcoded Profiles)", color = NeonCyan, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+                    ) {
+                        SuzyCatalog.personas.forEach { p ->
+                            FilterChip(
+                                selected = personaName.equals(p.name, ignoreCase = true),
+                                onClick = {
+                                    personaName = p.name
+                                    voiceName = p.voiceName
+                                    temperature = p.temperature
+                                },
+                                label = { Text(p.name, fontSize = 11.sp) }
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
                     Text("Female Voices (12 Styles)", color = NeonCyan, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -150,26 +180,33 @@ fun SettingsScreen(
                     Spacer(modifier = Modifier.height(10.dp))
 
                     OutlinedTextField(
-                        value = personaName,
-                        onValueChange = { personaName = it },
-                        label = { Text("Active Persona Name") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    OutlinedTextField(
-                        value = systemPrompt,
-                        onValueChange = { systemPrompt = it },
-                        label = { Text("Persona Behavior (System Prompt)") },
-                        minLines = 4,
-                        maxLines = 7,
+                        value = customNote,
+                        onValueChange = { customNote = it },
+                        label = { Text("Extra Personal Note (Optional)") },
+                        placeholder = { Text("e.g. Mujhe hamesha Jaan bulao...", fontSize = 12.sp) },
+                        minLines = 2,
+                        maxLines = 4,
                         modifier = Modifier.fillMaxWidth()
                     )
 
                     Spacer(modifier = Modifier.height(12.dp))
 
+                    Text(
+                        text = "Expressiveness (Temperature): ${String.format(Locale.US, "%.2f", temperature)}",
+                        color = TextPrimary,
+                        fontSize = 13.sp
+                    )
+                    Slider(value = temperature, onValueChange = { temperature = it }, valueRange = 0.3f..1.4f)
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // Section 3: Call & HUD Controls
+            Text("SECTION 3 • CALL & HUD CONTROLS", color = TextSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+            Spacer(modifier = Modifier.height(6.dp))
+            GlassCard(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(16.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -191,19 +228,10 @@ fun SettingsScreen(
                     ) {
                         Column {
                             Text("Live Captions HUD", color = TextPrimary, fontSize = 14.sp)
-                            Text("ORB ke neeche real-time subtitles dikhayein", color = TextSecondary, fontSize = 11.sp)
+                            Text("ORB ke neeche real-time transcript dikhayein", color = TextSecondary, fontSize = 11.sp)
                         }
                         Switch(checked = captions, onCheckedChange = { captions = it })
                     }
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    Text(
-                        text = "Expressiveness (Temperature): ${String.format("%.2f", temperature)}",
-                        color = TextPrimary,
-                        fontSize = 13.sp
-                    )
-                    Slider(value = temperature, onValueChange = { temperature = it }, valueRange = 0.3f..1.4f)
                 }
             }
 
@@ -211,14 +239,16 @@ fun SettingsScreen(
 
             Button(
                 onClick = {
+                    val cleanName = personaName.ifBlank { "Suzy" }
                     onSave(
                         SuzySettings(
                             apiKey = apiKey,
                             modelId = modelId,
                             voiceName = voiceName,
-                            activePersonaName = personaName.ifBlank { "Suzy" },
+                            activePersonaName = cleanName,
                             activeMoodId = current.activeMoodId,
-                            systemPrompt = systemPrompt,
+                            customNote = customNote,
+                            systemPrompt = SuzyCatalog.resolveHardcodedPrompt(cleanName, current.systemPrompt),
                             bargeInEnabled = bargeIn,
                             captionsEnabled = captions,
                             temperature = temperature
@@ -230,7 +260,7 @@ fun SettingsScreen(
                 colors = ButtonDefaults.buttonColors(containerColor = NeonPurple),
                 modifier = Modifier.fillMaxWidth().height(54.dp)
             ) {
-                Text("SAVE CONFIGURATION", fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
+                Text("SAVE & APPLY LIVE", fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
             }
 
             Spacer(modifier = Modifier.height(24.dp))

@@ -13,6 +13,11 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+data class BatteryTelemetry(
+    val percent: Int,
+    val isCharging: Boolean
+)
+
 class SuzyTools(private val context: Context) {
 
     var isTorchOn: Boolean = false
@@ -34,18 +39,22 @@ class SuzyTools(private val context: Context) {
         }
     }
 
-    fun getDeviceStatus(): String {
+    fun getBatteryTelemetry(): BatteryTelemetry {
         val batteryIntent = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
         val level = batteryIntent?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
         val scale = batteryIntent?.getIntExtra(BatteryManager.EXTRA_SCALE, 100) ?: 100
-        val pct = if (level >= 0) (level * 100) / scale else -1
+        val pct = if (level >= 0 && scale > 0) (level * 100) / scale else 0
         val status = batteryIntent?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
         val charging = status == BatteryManager.BATTERY_STATUS_CHARGING || status == BatteryManager.BATTERY_STATUS_FULL
+        return BatteryTelemetry(percent = pct, isCharging = charging)
+    }
 
+    fun getDeviceStatus(): String {
+        val bat = getBatteryTelemetry()
         val now = SimpleDateFormat("hh:mm a, dd MMM yyyy", Locale.getDefault()).format(Date())
         return JSONObject().apply {
-            put("battery_percent", pct)
-            put("is_charging", charging)
+            put("battery_percent", bat.percent)
+            put("is_charging", bat.isCharging)
             put("current_time", now)
             put("flashlight_on", isTorchOn)
         }.toString()

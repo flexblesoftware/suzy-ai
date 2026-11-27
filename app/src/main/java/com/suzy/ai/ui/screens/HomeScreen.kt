@@ -29,6 +29,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.BatteryChargingFull
+import androidx.compose.material.icons.rounded.BatteryStd
 import androidx.compose.material.icons.rounded.Build
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
@@ -39,6 +41,7 @@ import androidx.compose.material.icons.rounded.FlashlightOff
 import androidx.compose.material.icons.rounded.FlashlightOn
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.Launch
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.MicOff
 import androidx.compose.material.icons.rounded.Mood
@@ -99,6 +102,7 @@ import com.suzy.ai.ui.theme.TextPrimary
 import com.suzy.ai.ui.theme.TextSecondary
 import com.suzy.ai.viewmodel.SuzyState
 import com.suzy.ai.viewmodel.SuzyUiState
+import java.util.Locale
 
 private data class EmotionChip(
     val label: String,
@@ -111,6 +115,12 @@ private data class NavTab(
     val label: String,
     val icon: ImageVector
 )
+
+private fun formatCallDuration(totalSeconds: Long): String {
+    val mins = totalSeconds / 60L
+    val secs = totalSeconds % 60L
+    return String.format(Locale.US, "%02d:%02d", mins, secs)
+}
 
 @Composable
 fun HomeScreen(
@@ -134,8 +144,8 @@ fun HomeScreen(
     onDeleteMemory: (String) -> Unit,
     onToggleFlashlight: () -> Unit,
     onOpenApp: (String) -> Unit,
+    onRefreshTelemetry: () -> Unit,
     onCheckUpdate: () -> Unit,
-    onClearLogs: () -> Unit,
     onClearTranscripts: () -> Unit,
     onQuickReaction: (String) -> Unit,
     onInterruptClick: () -> Unit,
@@ -146,9 +156,14 @@ fun HomeScreen(
         NavTab("ORB", Icons.Rounded.GraphicEq),
         NavTab("PERSONAS", Icons.Rounded.Face),
         NavTab("MEMORY", Icons.Rounded.Psychology),
-        NavTab("LOGS", Icons.Rounded.History),
         NavTab("TOOLS", Icons.Rounded.Build)
     )
+
+    LaunchedEffect(selectedTab) {
+        if (selectedTab == 3) {
+            onRefreshTelemetry()
+        }
+    }
 
     GlassBackground {
         Column(modifier = Modifier.fillMaxSize()) {
@@ -180,7 +195,10 @@ fun HomeScreen(
                             onSelectPersona(it)
                             selectedTab = 0
                         },
-                        onCreateCustomPersona = onCreateCustomPersona,
+                        onCreateCustomPersona = { name, role, voice, colorHex, prompt ->
+                            onCreateCustomPersona(name, role, voice, colorHex, prompt)
+                            selectedTab = 0
+                        },
                         onDeleteCustomPersona = onDeleteCustomPersona,
                         onSelectVoice = onSelectVoice
                     )
@@ -189,34 +207,30 @@ fun HomeScreen(
                         onAddMemory = onAddMemory,
                         onDeleteMemory = onDeleteMemory
                     )
-                    3 -> LogsTab(
+                    3 -> ToolsTab(
                         uiState = uiState,
                         transcripts = transcripts,
-                        onClearLogs = onClearLogs,
-                        onClearTranscripts = onClearTranscripts
-                    )
-                    4 -> ToolsTab(
-                        uiState = uiState,
                         updateStatus = updateStatus,
                         onToggleFlashlight = onToggleFlashlight,
                         onOpenApp = onOpenApp,
+                        onClearTranscripts = onClearTranscripts,
                         onCheckUpdate = onCheckUpdate,
                         onOpenSettings = onOpenSettings
                     )
                 }
             }
 
-            // Floating 5-Tab Glassmorphic Navigation Bar
+            // Floating 4-Tab Glassmorphic Navigation Bar (LOGS completely removed)
             GlassCard(
                 shape = RoundedCornerShape(28.dp),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 14.dp, vertical = 8.dp)
+                    .padding(horizontal = 16.dp, vertical = 10.dp)
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 6.dp, vertical = 7.dp),
+                        .padding(horizontal = 8.dp, vertical = 8.dp),
                     horizontalArrangement = Arrangement.SpaceEvenly,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -227,7 +241,7 @@ fun HomeScreen(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(20.dp))
                                 .background(
-                                    if (active) NeonPurple.copy(alpha = 0.3f) else Color.Transparent
+                                    if (active) NeonPurple.copy(alpha = 0.32f) else Color.Transparent
                                 )
                                 .border(
                                     width = if (active) 1.dp else 0.dp,
@@ -235,7 +249,7 @@ fun HomeScreen(
                                     shape = RoundedCornerShape(20.dp)
                                 )
                                 .clickable { selectedTab = index }
-                                .padding(horizontal = if (active) 11.dp else 9.dp, vertical = 8.dp)
+                                .padding(horizontal = 13.dp, vertical = 8.dp)
                         ) {
                             Icon(
                                 imageVector = tab.icon,
@@ -244,13 +258,13 @@ fun HomeScreen(
                                 modifier = Modifier.size(18.dp)
                             )
                             if (active) {
-                                Spacer(modifier = Modifier.width(5.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
                                 Text(
                                     text = tab.label,
                                     color = TextPrimary,
-                                    fontSize = 10.sp,
+                                    fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
-                                    letterSpacing = 0.8.sp
+                                    letterSpacing = 0.9.sp
                                 )
                             }
                         }
@@ -298,7 +312,7 @@ private fun OrbTab(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.SpaceBetween
     ) {
-        // 1. Glass Top Header
+        // Section 1: Glass Top Header with Live Timer
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -310,15 +324,26 @@ private fun OrbTab(
                 modifier = Modifier.weight(1f).padding(end = 8.dp)
             ) {
                 Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp)) {
-                    Text(
-                        text = settings.activePersonaName.uppercase(),
-                        color = TextPrimary,
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 1.8.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = settings.activePersonaName.uppercase(),
+                            color = TextPrimary,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 1.8.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        if (isActive && uiState.callDurationSec > 0L) {
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = formatCallDuration(uiState.callDurationSec),
+                                color = NeonPink,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
                     Text(
                         text = "${settings.voiceName} • ${if (uiState.isSpeakerOn) "SPEAKER" else "EAR"} • ${memoryCount} MEM",
                         color = NeonCyan,
@@ -372,7 +397,7 @@ private fun OrbTab(
             }
         }
 
-        // 2. Center ORB + Status Pill + Dedicated Non-Overlapping Transcript HUD
+        // Section 2: Center 3D ORB + Status Pill + Non-Overlapping Transcript HUD
         Column(
             modifier = Modifier
                 .weight(1f)
@@ -464,7 +489,7 @@ private fun OrbTab(
             }
         }
 
-        // 3. Bottom Controls (Always cleanly separated below Transcript HUD)
+        // Section 3: Bottom Mood Switcher + Quick Emotions + Call Controls
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -620,6 +645,7 @@ private fun PersonasTab(
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
+        // Section 1: Header & Custom Persona Button
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -627,14 +653,14 @@ private fun PersonasTab(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "PERSONAS & VOICES",
+                    text = "PERSONAS & VOICE STUDIO",
                     color = NeonCyan,
                     fontSize = 15.sp,
                     fontWeight = FontWeight.Bold,
                     letterSpacing = 1.5.sp
                 )
                 Text(
-                    text = "${allPersonas.size} Personas • ${SuzyCatalog.femaleVoices.size} Female Voices",
+                    text = "1-tap live switch • Har persona ka hardcoded alag behavior hai",
                     color = TextSecondary,
                     fontSize = 11.sp
                 )
@@ -658,6 +684,15 @@ private fun PersonasTab(
 
         Spacer(modifier = Modifier.height(10.dp))
 
+        // Section 2: 12 Female Voices Strip (Instant Live Switch)
+        Text(
+            text = "SECTION 1 • FEMALE VOICES (12)",
+            color = TextSecondary,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 1.sp
+        )
+        Spacer(modifier = Modifier.height(6.dp))
         Row(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier
@@ -692,6 +727,16 @@ private fun PersonasTab(
         }
 
         Spacer(modifier = Modifier.height(12.dp))
+
+        // Section 3: Hardcoded & Custom Persona Cards (Clean Taglines, Zero Raw Prompt Clutter)
+        Text(
+            text = "SECTION 2 • GIRL COMPANION PERSONAS (${allPersonas.size})",
+            color = TextSecondary,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 1.sp
+        )
+        Spacer(modifier = Modifier.height(6.dp))
 
         LazyVerticalGrid(
             columns = GridCells.Fixed(2),
@@ -733,7 +778,7 @@ private fun PersonasTab(
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 if (isSelected) {
                                     Text(
-                                        text = "ACTIVE",
+                                        text = "LIVE",
                                         color = persona.accentColor,
                                         fontSize = 9.sp,
                                         fontWeight = FontWeight.Bold,
@@ -766,14 +811,25 @@ private fun PersonasTab(
                             text = persona.role,
                             color = persona.accentColor,
                             fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = if (persona.isCustom) "Custom • ${persona.voiceName}" else "Voice: ${persona.voiceName}",
+                            text = persona.tagline,
                             color = TextSecondary,
-                            fontSize = 10.sp
+                            fontSize = 10.sp,
+                            lineHeight = 13.sp,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "Voice: ${persona.voiceName}",
+                            color = NeonCyan,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.SemiBold
                         )
                     }
                 }
@@ -825,7 +881,7 @@ private fun CustomPersonaDialog(
                 OutlinedTextField(
                     value = role,
                     onValueChange = { role = it },
-                    label = { Text("Vibe / Role (e.g. Sweet Crush)") },
+                    label = { Text("Vibe / Tagline (e.g. Sweet Crush)") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -865,7 +921,7 @@ private fun CustomPersonaDialog(
                 OutlinedTextField(
                     value = prompt,
                     onValueChange = { prompt = it },
-                    label = { Text("Personality & Speaking Style") },
+                    label = { Text("Custom Speaking Style") },
                     minLines = 3,
                     maxLines = 5,
                     modifier = Modifier.fillMaxWidth()
@@ -881,7 +937,7 @@ private fun CustomPersonaDialog(
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = NeonPurple)
             ) {
-                Text("SAVE PERSONA", fontWeight = FontWeight.Bold)
+                Text("SAVE & ACTIVATE", fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {
@@ -911,13 +967,22 @@ private fun MemoryTab(
             letterSpacing = 1.5.sp
         )
         Text(
-            text = "Jo yahan save karoge, Suzy ko har call par hamesha yaad rahega",
+            text = "Yahan save ki gayi baatein live call mein turant sync hoti hain",
             color = TextSecondary,
             fontSize = 11.sp
         )
 
         Spacer(modifier = Modifier.height(10.dp))
 
+        // Section 1: Add Memory Card
+        Text(
+            text = "SECTION 1 • ADD NEW MEMORY",
+            color = TextSecondary,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 1.sp
+        )
+        Spacer(modifier = Modifier.height(6.dp))
         GlassCard(shape = RoundedCornerShape(18.dp), accentBorder = NeonPurple, modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(
@@ -961,6 +1026,16 @@ private fun MemoryTab(
 
         Spacer(modifier = Modifier.height(12.dp))
 
+        // Section 2: Saved Memories List
+        Text(
+            text = "SECTION 2 • SAVED MEMORIES (${memories.size})",
+            color = TextSecondary,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 1.sp
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+
         if (memories.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(
@@ -971,7 +1046,7 @@ private fun MemoryTab(
                 )
             }
         } else {
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.weight(1f)) {
                 items(memories, key = { it.id }) { mem ->
                     GlassCard(shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
                         Row(
@@ -1003,118 +1078,71 @@ private fun MemoryTab(
 }
 
 @Composable
-private fun LogsTab(
+private fun ToolsTab(
     uiState: SuzyUiState,
     transcripts: List<SavedTranscript>,
-    onClearLogs: () -> Unit,
-    onClearTranscripts: () -> Unit
+    updateStatus: String,
+    onToggleFlashlight: () -> Unit,
+    onOpenApp: (String) -> Unit,
+    onClearTranscripts: () -> Unit,
+    onCheckUpdate: () -> Unit,
+    onOpenSettings: () -> Unit
 ) {
-    var subTab by remember { mutableIntStateOf(0) }
-
-    Column(modifier = Modifier.fillMaxSize()) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        // Section 1: Telemetry & Hardware Controls
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterChip(
-                    selected = subTab == 0,
-                    onClick = { subTab = 0 },
-                    label = { Text("LIVE LOGS (${uiState.logs.size})", fontSize = 11.sp) }
-                )
-                FilterChip(
-                    selected = subTab == 1,
-                    onClick = { subTab = 1 },
-                    label = { Text("TRANSCRIPTS (${transcripts.size})", fontSize = 11.sp) }
-                )
-            }
+            Text("CONTROL CENTER", color = NeonCyan, fontSize = 15.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
 
-            IconButton(onClick = { if (subTab == 0) onClearLogs() else onClearTranscripts() }) {
-                Icon(Icons.Rounded.DeleteSweep, contentDescription = "Clear", tint = TextSecondary)
-            }
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        if (subTab == 0) {
-            if (uiState.logs.isEmpty()) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("Abhi koi live activity log nahi hai.", color = TextSecondary, fontSize = 14.sp)
-                }
-            } else {
-                LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(uiState.logs.reversed()) { log ->
-                        GlassCard(shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
-                            Column(modifier = Modifier.padding(12.dp)) {
-                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                    Text(log.source, color = NeonCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                    Text(log.time, color = TextSecondary, fontSize = 11.sp)
-                                }
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(log.message, color = TextPrimary, fontSize = 13.sp)
-                            }
-                        }
-                    }
-                }
-            }
-        } else {
-            if (transcripts.isEmpty()) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            GlassCard(shape = RoundedCornerShape(50), accentBorder = NeonCyan) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                ) {
+                    Icon(
+                        imageVector = if (uiState.isCharging) Icons.Rounded.BatteryChargingFull else Icons.Rounded.BatteryStd,
+                        contentDescription = "Battery",
+                        tint = if (uiState.isCharging) Color(0xFF34D399) else NeonCyan,
+                        modifier = Modifier.size(15.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
                     Text(
-                        text = "Abhi koi saved call transcript nahi hai.\nCall end karne par poori baat yahan save ho jayegi.",
-                        color = TextSecondary,
-                        fontSize = 13.sp,
-                        textAlign = TextAlign.Center
+                        text = "${uiState.batteryPercent}%${if (uiState.isCharging) " CHG" else ""}",
+                        color = TextPrimary,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
                     )
                 }
-            } else {
-                LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    items(transcripts, key = { it.id }) { item ->
-                        GlassCard(shape = RoundedCornerShape(16.dp), accentBorder = NeonPurple, modifier = Modifier.fillMaxWidth()) {
-                            Column(modifier = Modifier.padding(14.dp)) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Text(
-                                        text = "${item.personaName.uppercase()}  •  ${item.durationLabel}",
-                                        color = NeonPink,
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                    Text(text = item.dateTime, color = TextSecondary, fontSize = 10.sp)
-                                }
-                                Spacer(modifier = Modifier.height(6.dp))
-                                Text(text = item.dialogue, color = TextPrimary, fontSize = 12.sp, lineHeight = 18.sp)
-                            }
-                        }
-                    }
-                }
             }
         }
-    }
-}
 
-@Composable
-private fun ToolsTab(
-    uiState: SuzyUiState,
-    updateStatus: String,
-    onToggleFlashlight: () -> Unit,
-    onOpenApp: (String) -> Unit,
-    onCheckUpdate: () -> Unit,
-    onOpenSettings: () -> Unit
-) {
-    Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("CONTROL CENTER", color = NeonCyan, fontSize = 15.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
+        if (uiState.toolFeedback.isNotBlank()) {
+            GlassCard(shape = RoundedCornerShape(12.dp), accentBorder = NeonPink, modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = uiState.toolFeedback,
+                    color = TextPrimary,
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                )
+            }
+        }
 
+        Text("SECTION 1 • DEVICE & AI CONTROLS", color = TextSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             GlassCard(
                 shape = RoundedCornerShape(16.dp),
                 accentBorder = if (uiState.isFlashlightOn) NeonCyan else null,
                 modifier = Modifier
                     .weight(1f)
-                    .height(60.dp)
+                    .height(58.dp)
                     .clickable { onToggleFlashlight() }
             ) {
                 Row(
@@ -1142,7 +1170,7 @@ private fun ToolsTab(
                 accentBorder = NeonPurple,
                 modifier = Modifier
                     .weight(1f)
-                    .height(60.dp)
+                    .height(58.dp)
                     .clickable { onOpenSettings() }
             ) {
                 Row(
@@ -1157,7 +1185,8 @@ private fun ToolsTab(
             }
         }
 
-        Text("QUICK LAUNCH", color = TextSecondary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.sp)
+        // Section 2: Quick App Launcher
+        Text("SECTION 2 • QUICK APP LAUNCHER", color = TextSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf("YouTube", "WhatsApp", "Chrome").forEach { app ->
                 GlassCard(
@@ -1167,16 +1196,108 @@ private fun ToolsTab(
                         .height(46.dp)
                         .clickable { onOpenApp(app) }
                 ) {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Row(
+                        modifier = Modifier.fillMaxSize(),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Rounded.Launch, contentDescription = null, tint = NeonCyan, modifier = Modifier.size(13.dp))
+                        Spacer(modifier = Modifier.width(5.dp))
+                        Text(app, color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                    }
+                }
+            }
+        }
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf("Instagram", "Telegram", "Settings").forEach { app ->
+                GlassCard(
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(46.dp)
+                        .clickable { onOpenApp(app) }
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxSize(),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Rounded.Launch, contentDescription = null, tint = NeonPurple, modifier = Modifier.size(13.dp))
+                        Spacer(modifier = Modifier.width(5.dp))
                         Text(app, color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Medium)
                     }
                 }
             }
         }
 
+        // Section 3: Saved Call Transcripts
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Rounded.History, contentDescription = null, tint = NeonPink, modifier = Modifier.size(14.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = "SECTION 3 • SAVED CALL HISTORY (${transcripts.size})",
+                    color = TextSecondary,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.sp
+                )
+            }
+            if (transcripts.isNotEmpty()) {
+                IconButton(onClick = onClearTranscripts, modifier = Modifier.size(28.dp)) {
+                    Icon(Icons.Rounded.DeleteSweep, contentDescription = "Clear History", tint = TextSecondary, modifier = Modifier.size(17.dp))
+                }
+            }
+        }
+
+        if (transcripts.isEmpty()) {
+            GlassCard(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = "Call end karne par poori conversation history yahan save hogi.",
+                    color = TextSecondary,
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(14.dp)
+                )
+            }
+        } else {
+            transcripts.take(5).forEach { item ->
+                GlassCard(shape = RoundedCornerShape(16.dp), accentBorder = NeonPurple, modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(13.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = "${item.personaName.uppercase()}  •  ${item.durationLabel}",
+                                color = NeonPink,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(text = item.dateTime, color = TextSecondary, fontSize = 10.sp)
+                        }
+                        Spacer(modifier = Modifier.height(5.dp))
+                        Text(
+                            text = item.dialogue,
+                            color = TextPrimary,
+                            fontSize = 12.sp,
+                            lineHeight = 17.sp,
+                            maxLines = 6,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+        }
+
+        // Section 4: App Updates
+        Text("SECTION 4 • SYSTEM & UPDATES", color = TextSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
         GlassCard(shape = RoundedCornerShape(20.dp), accentBorder = NeonPurple, modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(16.dp)) {
-                Text("APP UPDATES (v${BuildConfig.VERSION_NAME})", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                Text("Suzy AI v${BuildConfig.VERSION_NAME}", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 15.sp)
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = updateStatus.ifBlank { "GitHub Releases se direct in-app update check karein." },
@@ -1196,5 +1317,7 @@ private fun ToolsTab(
                 }
             }
         }
+
+        Spacer(modifier = Modifier.height(12.dp))
     }
 }

@@ -14,13 +14,17 @@ import com.suzy.ai.data.SuzySettings
 import com.suzy.ai.network.GeminiLiveClient
 import com.suzy.ai.service.CallServiceBridge
 import com.suzy.ai.tools.SuzyTools
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -34,22 +38,19 @@ enum class SuzyState {
     ERROR
 }
 
-data class LogEntry(
-    val time: String,
-    val source: String,
-    val message: String
-)
-
 data class SuzyUiState(
     val state: SuzyState = SuzyState.IDLE,
-    val statusText: String = "Tap Start to talk",
+    val statusText: String = "Tap Start Call to talk",
     val liveCaption: String = "",
     val lastCaption: String = "",
     val amplitude: Float = 0f,
     val isMuted: Boolean = false,
     val isSpeakerOn: Boolean = true,
     val isFlashlightOn: Boolean = false,
-    val logs: List<LogEntry> = emptyList()
+    val callDurationSec: Long = 0L,
+    val batteryPercent: Int = 0,
+    val isCharging: Boolean = false,
+    val toolFeedback: String = ""
 )
 
 class SuzyViewModel(application: Application) : AndroidViewModel(application) {
@@ -86,26 +87,63 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
     private val _uiState = MutableStateFlow(SuzyUiState())
     val uiState: StateFlow<SuzyUiState> = _uiState.asStateFlow()
 
+    @Volatile
+    private var sessionGeneration: Long = 0L
+
+    @Volatile
+    private var liveClient: GeminiLiveClient? = null
+
+    private var timerJob: Job? = null
     private var sessionStartMillis: Long = 0L
     private val sessionTurnLines = mutableListOf<String>()
 
     init {
         CallServiceBridge.onToggleMuteRequested = { toggleMute() }
         CallServiceBridge.onStopCallRequested = { stopSession() }
+        refreshDeviceTelemetry()
     }
 
-    private fun appendLog(source: String, msg: String) {
-        val ts = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
-        _uiState.update { current ->
-            current.copy(logs = (current.logs + LogEntry(ts, source, msg)).takeLast(80))
+    fun refreshDeviceTelemetry() {
+        val bat = suzyTools.getBatteryTelemetry()
+        _uiState.update {
+            it.copy(
+                batteryPercent = bat.percent,
+                isCharging = bat.isCharging,
+                isFlashlightOn = suzyTools.isTorchOn
+            )
         }
     }
 
+    private fun startCallTimer() {
+        timerJob?.cancel()
+        if (sessionStartMillis == 0L) {
+            sessionStartMillis = System.currentTimeMillis()
+        }
+        timerJob = viewModelScope.launch {
+            while (isActive) {
+                val sec = ((System.currentTimeMillis() - sessionStartMillis) / 1000L).coerceAtLeast(0L)
+                _uiState.update { it.copy(callDurationSec = sec) }
+                delay(1000L)
+            }
+        }
+    }
+
+    private fun stopCallTimer() {
+        timerJob?.cancel()
+        timerJob = null
+        sessionStartMillis = 0L
+        _uiState.update { it.copy(callDurationSec = 0L) }
+    }
+
     private fun buildEnrichedSettings(base: SuzySettings): SuzySettings {
+        val hardcodedBasePrompt = SuzyCatalog.resolveHardcodedPrompt(base.activePersonaName, base.systemPrompt)
         val mood = SuzyCatalog.moods.firstOrNull { it.id == base.activeMoodId }
         val savedMemories = memories.value
 
-        val promptBuilder = StringBuilder(base.systemPrompt.trim())
+        val promptBuilder = StringBuilder(hardcodedBasePrompt.trim())
+        if (base.customNote.isNotBlank()) {
+            promptBuilder.append("\n\n[USER PERSONAL INSTRUCTION]: ${base.customNote.trim()}")
+        }
         if (mood != null) {
             promptBuilder.append("\n\n[CURRENT LIVE MOOD - ${mood.label}]: ${mood.instruction}")
         }
@@ -144,150 +182,180 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private val liveClient = GeminiLiveClient(
-        onConnected = {
-            val activeName = settings.value.activePersonaName
-            sessionStartMillis = System.currentTimeMillis()
-            sessionTurnLines.clear()
-
-            audioEngine.setSpeakerphone(_uiState.value.isSpeakerOn)
-            audioEngine.playUiChime(true)
-            audioEngine.startPlayback()
-            audioEngine.startRecording(
-                onAudioChunk = { pcm -> liveClientSend(pcm) },
-                onAmplitude = { amp ->
-                    _uiState.update { cur ->
-                        if (cur.state == SuzyState.LISTENING) cur.copy(amplitude = amp) else cur
+    private fun createClientForGeneration(gen: Long, targetSettings: SuzySettings): GeminiLiveClient {
+        return GeminiLiveClient(
+            onConnected = {
+                if (gen != sessionGeneration) return@GeminiLiveClient
+                val activeName = targetSettings.activePersonaName
+                startCallTimer()
+                audioEngine.setSpeakerphone(_uiState.value.isSpeakerOn)
+                audioEngine.playUiChime(true)
+                audioEngine.startPlayback()
+                audioEngine.startRecording(
+                    onAudioChunk = { pcm ->
+                        if (gen == sessionGeneration) {
+                            liveClient?.sendPcmAudio(pcm)
+                        }
+                    },
+                    onAmplitude = { amp ->
+                        if (gen == sessionGeneration) {
+                            _uiState.update { cur ->
+                                if (cur.state == SuzyState.LISTENING) cur.copy(amplitude = amp) else cur
+                            }
+                        }
+                    }
+                )
+                _uiState.update {
+                    it.copy(state = SuzyState.LISTENING, statusText = "$activeName sun rahi hai...")
+                }
+                CallServiceBridge.updateNotification(
+                    appContext,
+                    activeName,
+                    "$activeName sun rahi hai...",
+                    _uiState.value.isMuted
+                )
+            },
+            onAudioOutput = { pcm ->
+                if (gen != sessionGeneration) return@GeminiLiveClient
+                val activeName = targetSettings.activePersonaName
+                _uiState.update {
+                    it.copy(state = SuzyState.SPEAKING, statusText = "$activeName bol rahi hai...")
+                }
+                audioEngine.playPcmChunk(pcm) { amp ->
+                    if (gen == sessionGeneration) {
+                        _uiState.update { it.copy(amplitude = amp) }
                     }
                 }
-            )
-            appendLog("SYSTEM", "$activeName (${settings.value.voiceName}) connected • Screen-off call active")
-            _uiState.update {
-                it.copy(state = SuzyState.LISTENING, statusText = "$activeName sun rahi hai...")
-            }
-            CallServiceBridge.updateNotification(
-                appContext,
-                activeName,
-                "$activeName sun rahi hai...",
-                _uiState.value.isMuted
-            )
-        },
-        onAudioOutput = { pcm ->
-            val activeName = settings.value.activePersonaName
-            _uiState.update {
-                it.copy(state = SuzyState.SPEAKING, statusText = "$activeName bol rahi hai...")
-            }
-            audioEngine.playPcmChunk(pcm) { amp ->
-                _uiState.update { it.copy(amplitude = amp) }
-            }
-        },
-        onTextOutput = { text ->
-            _uiState.update { cur ->
-                val combined = (cur.liveCaption + text).takeLast(260)
-                cur.copy(liveCaption = combined, lastCaption = combined)
-            }
-        },
-        onToolCall = { callId, name, args ->
-            val result = suzyTools.executeTool(name, args)
-            appendLog("JARVIS TOOL", "$name -> $result")
-            _uiState.update { it.copy(isFlashlightOn = suzyTools.isTorchOn) }
-            liveClientSendToolResponse(callId, name, result)
-        },
-        onInterrupted = {
-            val activeName = settings.value.activePersonaName
-            if (settings.value.bargeInEnabled) {
-                audioEngine.flushPlayback()
-            }
-            _uiState.update {
-                it.copy(state = SuzyState.LISTENING, statusText = "$activeName sun rahi hai...", amplitude = 0.1f)
-            }
-        },
-        onTurnComplete = {
-            val activeName = settings.value.activePersonaName
-            val caption = _uiState.value.liveCaption.trim()
-            if (caption.isNotBlank()) {
-                val ts = SimpleDateFormat("hh:mm a", Locale.getDefault()).format(Date())
-                sessionTurnLines.add("[$ts] $activeName: $caption")
-                appendLog(activeName.uppercase(), caption)
-            }
-            _uiState.update {
-                it.copy(
-                    state = SuzyState.LISTENING,
-                    statusText = "$activeName sun rahi hai...",
-                    lastCaption = if (caption.isNotBlank()) caption else it.lastCaption,
-                    liveCaption = "",
-                    amplitude = 0.05f
-                )
-            }
-        },
-        onError = { err ->
-            audioEngine.releaseAll()
-            persistCurrentTranscriptIfAny()
-            CallServiceBridge.stopService(appContext)
-            appendLog("ERROR", err)
-            _uiState.update {
-                it.copy(state = SuzyState.ERROR, statusText = "Error: $err", amplitude = 0f)
-            }
-        },
-        onClosed = {
-            audioEngine.releaseAll()
-            persistCurrentTranscriptIfAny()
-            CallServiceBridge.stopService(appContext)
-            _uiState.update { cur ->
-                if (cur.state != SuzyState.ERROR) {
-                    cur.copy(
-                        state = SuzyState.IDLE,
-                        statusText = "Tap Start to talk",
-                        amplitude = 0f
+            },
+            onTextOutput = { text ->
+                if (gen != sessionGeneration) return@GeminiLiveClient
+                _uiState.update { cur ->
+                    val combined = (cur.liveCaption + text).takeLast(260)
+                    cur.copy(liveCaption = combined, lastCaption = combined)
+                }
+            },
+            onToolCall = { callId: String, name: String, args: JSONObject ->
+                if (gen != sessionGeneration) return@GeminiLiveClient
+                val result = suzyTools.executeTool(name, args)
+                refreshDeviceTelemetry()
+                _uiState.update { it.copy(toolFeedback = result) }
+                liveClient?.sendToolResponse(callId, name, result)
+            },
+            onInterrupted = {
+                if (gen != sessionGeneration) return@GeminiLiveClient
+                val activeName = targetSettings.activePersonaName
+                if (targetSettings.bargeInEnabled) {
+                    audioEngine.flushPlayback()
+                }
+                _uiState.update {
+                    it.copy(state = SuzyState.LISTENING, statusText = "$activeName sun rahi hai...", amplitude = 0.1f)
+                }
+            },
+            onTurnComplete = {
+                if (gen != sessionGeneration) return@GeminiLiveClient
+                val activeName = targetSettings.activePersonaName
+                val caption = _uiState.value.liveCaption.trim()
+                if (caption.isNotBlank()) {
+                    val ts = SimpleDateFormat("hh:mm a", Locale.getDefault()).format(Date())
+                    sessionTurnLines.add("[$ts] $activeName: $caption")
+                }
+                _uiState.update {
+                    it.copy(
+                        state = SuzyState.LISTENING,
+                        statusText = "$activeName sun rahi hai...",
+                        lastCaption = if (caption.isNotBlank()) caption else it.lastCaption,
+                        liveCaption = "",
+                        amplitude = 0.05f
                     )
-                } else cur
+                }
+            },
+            onError = { err ->
+                if (gen != sessionGeneration) return@GeminiLiveClient
+                audioEngine.releaseAll()
+                persistCurrentTranscriptIfAny()
+                stopCallTimer()
+                CallServiceBridge.stopService(appContext)
+                _uiState.update {
+                    it.copy(state = SuzyState.ERROR, statusText = "Error: $err", amplitude = 0f)
+                }
+            },
+            onClosed = {
+                if (gen != sessionGeneration) return@GeminiLiveClient
+                audioEngine.releaseAll()
+                persistCurrentTranscriptIfAny()
+                stopCallTimer()
+                CallServiceBridge.stopService(appContext)
+                _uiState.update { cur ->
+                    if (cur.state != SuzyState.ERROR) {
+                        cur.copy(
+                            state = SuzyState.IDLE,
+                            statusText = "Tap Start Call to talk",
+                            amplitude = 0f
+                        )
+                    } else cur
+                }
             }
-        }
-    )
-
-    private fun liveClientSend(pcm: ByteArray) {
-        liveClient.sendPcmAudio(pcm)
+        )
     }
 
-    private fun liveClientSendToolResponse(callId: String, name: String, result: String) {
-        liveClient.sendToolResponse(callId, name, result)
+    private fun isSessionActive(): Boolean {
+        val st = _uiState.value.state
+        return st == SuzyState.CONNECTING || st == SuzyState.LISTENING || st == SuzyState.SPEAKING
     }
 
-    fun startSession() {
-        val currentSettings = settings.value
-        if (currentSettings.apiKey.isBlank()) {
+    fun startSession(customSettings: SuzySettings? = null) {
+        val baseSettings = customSettings ?: settings.value
+        if (baseSettings.apiKey.isBlank()) {
             _uiState.update {
-                it.copy(state = SuzyState.ERROR, statusText = "Pehle Settings mein Gemini API Key daalo")
+                it.copy(state = SuzyState.ERROR, statusText = "Pehle AI Config mein Gemini API Key daalo")
             }
             return
         }
-        val enrichedSettings = buildEnrichedSettings(currentSettings)
+        val gen = ++sessionGeneration
+        liveClient?.disconnect()
+        audioEngine.flushPlayback()
+
+        val enrichedSettings = buildEnrichedSettings(baseSettings)
         _uiState.update {
             it.copy(
                 state = SuzyState.CONNECTING,
-                statusText = "${currentSettings.activePersonaName} se connect ho raha hai...",
+                statusText = "${baseSettings.activePersonaName} connect ho rahi hai...",
                 liveCaption = "",
                 lastCaption = ""
             )
         }
         CallServiceBridge.startService(
             appContext,
-            currentSettings.activePersonaName,
+            baseSettings.activePersonaName,
             "Connecting live voice...",
             _uiState.value.isMuted
         )
-        liveClient.connect(enrichedSettings)
+        val client = createClientForGeneration(gen, enrichedSettings)
+        liveClient = client
+        client.connect(enrichedSettings)
     }
 
     fun stopSession() {
+        ++sessionGeneration
         audioEngine.playUiChime(false)
-        liveClient.disconnect()
+        liveClient?.disconnect()
+        liveClient = null
         audioEngine.releaseAll()
         persistCurrentTranscriptIfAny()
+        stopCallTimer()
         CallServiceBridge.stopService(appContext)
-        appendLog("SYSTEM", "Session stopped")
         _uiState.update {
-            it.copy(state = SuzyState.IDLE, statusText = "Tap Start to talk", amplitude = 0f)
+            it.copy(state = SuzyState.IDLE, statusText = "Tap Start Call to talk", amplitude = 0f)
+        }
+    }
+
+    private fun hotReloadIfActive(updatedSettings: SuzySettings) {
+        if (isSessionActive()) {
+            startSession(updatedSettings)
+        } else {
+            _uiState.update {
+                it.copy(statusText = "${updatedSettings.activePersonaName} (${updatedSettings.voiceName}) ready")
+            }
         }
     }
 
@@ -300,13 +368,7 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
         )
         viewModelScope.launch {
             repo.saveSettings(updated)
-            appendLog("PERSONA", "Switched to ${persona.name} (${persona.role} - ${persona.voiceName})")
-            if (_uiState.value.state == SuzyState.LISTENING || _uiState.value.state == SuzyState.SPEAKING) {
-                stopSession()
-                _uiState.update { it.copy(statusText = "${persona.name} ready! Tap Start") }
-            } else {
-                _uiState.update { it.copy(statusText = "${persona.name} selected (${persona.voiceName})") }
-            }
+            hotReloadIfActive(updated)
         }
     }
 
@@ -318,8 +380,17 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
         prompt: String
     ) {
         viewModelScope.launch {
-            repo.saveCustomPersona(name, role, voiceName, accentHex, prompt)
-            appendLog("CUSTOM PERSONA", "Created persona '$name' ($voiceName)")
+            val created = repo.saveCustomPersona(name, role, voiceName, accentHex, prompt)
+            if (created != null) {
+                val updated = settings.value.copy(
+                    activePersonaName = created.name,
+                    voiceName = created.voiceName,
+                    systemPrompt = created.systemPrompt,
+                    temperature = created.temperature
+                )
+                repo.saveSettings(updated)
+                hotReloadIfActive(updated)
+            }
         }
     }
 
@@ -333,10 +404,10 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
         val updated = settings.value.copy(activeMoodId = mood.id)
         viewModelScope.launch {
             repo.saveSettings(updated)
-            appendLog("MOOD", "Live mood switched to ${mood.label}")
-            val isActive = _uiState.value.state == SuzyState.LISTENING || _uiState.value.state == SuzyState.SPEAKING
-            if (isActive) {
-                liveClient.sendReactionPrompt("Apna mood turant '${mood.label}' par shift karo: ${mood.instruction} Aur isi mood mein 1 chhoti cute line bolo.")
+            if (isSessionActive()) {
+                liveClient?.sendReactionPrompt(
+                    "Apna mood turant '${mood.label}' par shift karo: ${mood.instruction} Isi mood mein 1 chhoti cute line bolo."
+                )
             }
         }
     }
@@ -345,7 +416,7 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
         val updated = settings.value.copy(voiceName = voiceName)
         viewModelScope.launch {
             repo.saveSettings(updated)
-            appendLog("VOICE", "Voice changed to $voiceName")
+            hotReloadIfActive(updated)
         }
     }
 
@@ -359,7 +430,11 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
     fun addMemory(category: String, content: String) {
         viewModelScope.launch {
             repo.addMemory(category, content)
-            appendLog("MEMORY VAULT", "Saved ($category): $content")
+            if (isSessionActive()) {
+                liveClient?.sendReactionPrompt(
+                    "Yeh nayi baat hamesha ke liye yaad kar lo ($category): $content. Bas pyaar se chhota sa 'Haan yaad rakhungi' bolo."
+                )
+            }
         }
     }
 
@@ -395,22 +470,17 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
     fun toggleFlashlightManual() {
         val next = !suzyTools.isTorchOn
         val res = suzyTools.toggleFlashlight(next)
-        appendLog("MANUAL TOOL", res)
-        _uiState.update { it.copy(isFlashlightOn = suzyTools.isTorchOn) }
+        _uiState.update { it.copy(isFlashlightOn = suzyTools.isTorchOn, toolFeedback = res) }
     }
 
     fun openAppManual(appName: String) {
         val res = suzyTools.openApp(appName)
-        appendLog("MANUAL TOOL", res)
-    }
-
-    fun clearLogs() {
-        _uiState.update { it.copy(logs = emptyList()) }
+        _uiState.update { it.copy(toolFeedback = res) }
     }
 
     fun sendQuickReaction(prompt: String) {
         audioEngine.flushPlayback()
-        liveClient.sendReactionPrompt(prompt)
+        liveClient?.sendReactionPrompt(prompt)
     }
 
     fun interruptSuzy() {
@@ -419,8 +489,12 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun updateSettings(updated: SuzySettings) {
+        val resolved = updated.copy(
+            systemPrompt = SuzyCatalog.resolveHardcodedPrompt(updated.activePersonaName, updated.systemPrompt)
+        )
         viewModelScope.launch {
-            repo.saveSettings(updated)
+            repo.saveSettings(resolved)
+            hotReloadIfActive(resolved)
         }
     }
 
