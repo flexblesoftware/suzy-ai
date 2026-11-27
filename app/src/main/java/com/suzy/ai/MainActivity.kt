@@ -7,18 +7,15 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.suzy.ai.ui.components.UpdateDialog
 import com.suzy.ai.ui.screens.HomeScreen
@@ -29,6 +26,13 @@ import com.suzy.ai.util.PermissionHelper
 import com.suzy.ai.viewmodel.SuzyViewModel
 
 class MainActivity : ComponentActivity() {
+
+    private var resumeTick by mutableIntStateOf(0)
+
+    override fun onResume() {
+        super.onResume()
+        resumeTick++
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -46,18 +50,9 @@ class MainActivity : ComponentActivity() {
                 val updateManager = remember { UpdateManager(applicationContext, scope) }
                 val updateState by updateManager.state.collectAsState()
 
-                val lifecycleOwner = LocalLifecycleOwner.current
-                DisposableEffect(lifecycleOwner) {
-                    val observer = LifecycleEventObserver { _, event ->
-                        if (event == Lifecycle.Event.ON_RESUME) {
-                            vm.refreshGuardAndPermissions()
-                            vm.refreshDeviceTelemetry()
-                        }
-                    }
-                    lifecycleOwner.lifecycle.addObserver(observer)
-                    onDispose {
-                        lifecycleOwner.lifecycle.removeObserver(observer)
-                    }
+                LaunchedEffect(resumeTick) {
+                    vm.refreshGuardAndPermissions()
+                    vm.refreshDeviceTelemetry()
                 }
 
                 val multiPermissionLauncher = rememberLauncherForActivityResult(

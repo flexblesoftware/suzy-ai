@@ -189,7 +189,6 @@ class CallAnnouncerService : Service(), TextToSpeech.OnInitListener {
                     val repo = SettingsRepository(applicationContext)
                     val s = repo.settingsFlow.first()
                     val msg = buildAnnouncementLine(
-                        personaName = s.activePersonaName,
                         callerLabel = "Best Friend",
                         style = s.announcerStyle,
                         includeName = true
@@ -208,7 +207,6 @@ class CallAnnouncerService : Service(), TextToSpeech.OnInitListener {
     }
 
     private fun handleIncomingRinging(rawNumber: String) {
-        // Android sends PHONE_STATE twice: first with empty number, then ~250ms later with actual number
         if (rawNumber.isBlank() && !activeRingingResolved) {
             ringDebounceJob?.cancel()
             ringDebounceJob = serviceScope.launch {
@@ -245,7 +243,6 @@ class CallAnnouncerService : Service(), TextToSpeech.OnInitListener {
             )
 
             val spoken = buildAnnouncementLine(
-                personaName = s.activePersonaName,
                 callerLabel = callerName,
                 style = s.announcerStyle,
                 includeName = s.announceCallerName && callerName.isNotBlank()
@@ -259,7 +256,6 @@ class CallAnnouncerService : Service(), TextToSpeech.OnInitListener {
     }
 
     private fun buildAnnouncementLine(
-        personaName: String,
         callerLabel: String,
         style: String,
         includeName: Boolean
@@ -372,11 +368,11 @@ class CallAnnouncerService : Service(), TextToSpeech.OnInitListener {
     }
 
     private fun startForegroundCompat(notification: Notification) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(
                 NOTIFICATION_ID,
                 notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
             )
         } else {
             startForeground(NOTIFICATION_ID, notification)
