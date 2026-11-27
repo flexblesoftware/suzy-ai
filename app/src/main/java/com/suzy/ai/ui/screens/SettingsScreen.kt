@@ -59,12 +59,13 @@ fun SettingsScreen(
     var personaName by remember(current) { mutableStateOf(current.activePersonaName) }
     var systemPrompt by remember(current) { mutableStateOf(current.systemPrompt) }
     var bargeIn by remember(current) { mutableStateOf(current.bargeInEnabled) }
+    var captions by remember(current) { mutableStateOf(current.captionsEnabled) }
     var temperature by remember(current) { mutableFloatStateOf(current.temperature) }
     var showKey by remember { mutableStateOf(false) }
 
     val modelPresets = listOf(
-        "Gemini 2.5 Live" to "models/gemini-2.5-flash-native-audio-preview-12-2025",
-        "Gemini 3.8 Live" to "models/gemini-3.8-live"
+        "Gemini 3.8 Live" to "models/gemini-3.8-live",
+        "Gemini 2.5 Live" to "models/gemini-2.5-flash-native-audio-preview-12-2025"
     )
 
     GlassBackground {
@@ -181,6 +182,20 @@ fun SettingsScreen(
                         Switch(checked = bargeIn, onCheckedChange = { bargeIn = it })
                     }
 
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text("Live Captions HUD", color = TextPrimary, fontSize = 14.sp)
+                            Text("ORB ke neeche real-time subtitles dikhayein", color = TextSecondary, fontSize = 11.sp)
+                        }
+                        Switch(checked = captions, onCheckedChange = { captions = it })
+                    }
+
                     Spacer(modifier = Modifier.height(10.dp))
 
                     Text(
@@ -202,8 +217,10 @@ fun SettingsScreen(
                             modelId = modelId,
                             voiceName = voiceName,
                             activePersonaName = personaName.ifBlank { "Suzy" },
+                            activeMoodId = current.activeMoodId,
                             systemPrompt = systemPrompt,
                             bargeInEnabled = bargeIn,
+                            captionsEnabled = captions,
                             temperature = temperature
                         )
                     )

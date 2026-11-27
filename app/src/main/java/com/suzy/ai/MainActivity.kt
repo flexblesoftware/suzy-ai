@@ -32,6 +32,9 @@ class MainActivity : ComponentActivity() {
                 val vm: SuzyViewModel = viewModel()
                 val uiState by vm.uiState.collectAsState()
                 val settings by vm.settings.collectAsState()
+                val memories by vm.memories.collectAsState()
+                val customPersonas by vm.customPersonas.collectAsState()
+                val transcripts by vm.transcripts.collectAsState()
                 var showSettings by remember { mutableStateOf(false) }
 
                 val scope = rememberCoroutineScope()
@@ -80,6 +83,9 @@ class MainActivity : ComponentActivity() {
                     HomeScreen(
                         uiState = uiState,
                         settings = settings,
+                        memories = memories,
+                        customPersonas = customPersonas,
+                        transcripts = transcripts,
                         updateStatus = updateState.statusMessage,
                         onStartClick = {
                             val hasMic = ContextCompat.checkSelfPermission(
@@ -95,12 +101,21 @@ class MainActivity : ComponentActivity() {
                         onStopClick = { vm.stopSession() },
                         onToggleMute = { vm.toggleMute() },
                         onToggleSpeaker = { vm.toggleSpeaker() },
+                        onToggleCaptions = { vm.toggleCaptions() },
+                        onSelectMood = { vm.selectMood(it) },
                         onSelectPersona = { vm.selectPersona(it) },
+                        onCreateCustomPersona = { name, role, voice, colorHex, prompt ->
+                            vm.createCustomPersona(name, role, voice, colorHex, prompt)
+                        },
+                        onDeleteCustomPersona = { vm.deleteCustomPersona(it) },
                         onSelectVoice = { vm.selectVoice(it) },
+                        onAddMemory = { cat, text -> vm.addMemory(cat, text) },
+                        onDeleteMemory = { vm.deleteMemory(it) },
                         onToggleFlashlight = { vm.toggleFlashlightManual() },
                         onOpenApp = { vm.openAppManual(it) },
                         onCheckUpdate = { updateManager.checkForUpdate(silent = false) },
                         onClearLogs = { vm.clearLogs() },
+                        onClearTranscripts = { vm.clearTranscripts() },
                         onQuickReaction = { vm.sendQuickReaction(it) },
                         onInterruptClick = { vm.interruptSuzy() },
                         onOpenSettings = { showSettings = true }

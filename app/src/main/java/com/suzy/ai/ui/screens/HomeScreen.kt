@@ -24,9 +24,13 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Build
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.Face
 import androidx.compose.material.icons.rounded.Favorite
@@ -36,23 +40,33 @@ import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.MicOff
+import androidx.compose.material.icons.rounded.Mood
 import androidx.compose.material.icons.rounded.PhoneInTalk
 import androidx.compose.material.icons.rounded.PowerSettingsNew
+import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.RecordVoiceOver
 import androidx.compose.material.icons.rounded.SentimentVerySatisfied
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Spa
 import androidx.compose.material.icons.rounded.Stop
+import androidx.compose.material.icons.rounded.Subtitles
+import androidx.compose.material.icons.rounded.SubtitlesOff
 import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material.icons.rounded.VolumeUp
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -67,7 +81,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.suzy.ai.BuildConfig
+import com.suzy.ai.data.MemoryItem
+import com.suzy.ai.data.MoodOption
 import com.suzy.ai.data.PersonaProfile
+import com.suzy.ai.data.SavedTranscript
 import com.suzy.ai.data.SuzyCatalog
 import com.suzy.ai.data.SuzySettings
 import com.suzy.ai.ui.components.GlassBackground
@@ -98,17 +115,27 @@ private data class NavTab(
 fun HomeScreen(
     uiState: SuzyUiState,
     settings: SuzySettings,
+    memories: List<MemoryItem>,
+    customPersonas: List<PersonaProfile>,
+    transcripts: List<SavedTranscript>,
     updateStatus: String,
     onStartClick: () -> Unit,
     onStopClick: () -> Unit,
     onToggleMute: () -> Unit,
     onToggleSpeaker: () -> Unit,
+    onToggleCaptions: () -> Unit,
+    onSelectMood: (MoodOption) -> Unit,
     onSelectPersona: (PersonaProfile) -> Unit,
+    onCreateCustomPersona: (String, String, String, Long, String) -> Unit,
+    onDeleteCustomPersona: (String) -> Unit,
     onSelectVoice: (String) -> Unit,
+    onAddMemory: (String, String) -> Unit,
+    onDeleteMemory: (String) -> Unit,
     onToggleFlashlight: () -> Unit,
     onOpenApp: (String) -> Unit,
     onCheckUpdate: () -> Unit,
     onClearLogs: () -> Unit,
+    onClearTranscripts: () -> Unit,
     onQuickReaction: (String) -> Unit,
     onInterruptClick: () -> Unit,
     onOpenSettings: () -> Unit
@@ -117,6 +144,7 @@ fun HomeScreen(
     val tabs = listOf(
         NavTab("ORB", Icons.Rounded.GraphicEq),
         NavTab("PERSONAS", Icons.Rounded.Face),
+        NavTab("MEMORY", Icons.Rounded.Psychology),
         NavTab("LOGS", Icons.Rounded.History),
         NavTab("TOOLS", Icons.Rounded.Build)
     )
@@ -127,30 +155,46 @@ fun HomeScreen(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
-                    .padding(horizontal = 18.dp, vertical = 14.dp)
+                    .padding(horizontal = 16.dp, vertical = 12.dp)
             ) {
                 when (selectedTab) {
                     0 -> OrbTab(
                         uiState = uiState,
                         settings = settings,
+                        memoryCount = memories.size,
                         onStartClick = onStartClick,
                         onStopClick = onStopClick,
                         onToggleMute = onToggleMute,
                         onToggleSpeaker = onToggleSpeaker,
+                        onToggleCaptions = onToggleCaptions,
+                        onSelectMood = onSelectMood,
                         onQuickReaction = onQuickReaction,
                         onInterruptClick = onInterruptClick,
                         onOpenSettings = onOpenSettings
                     )
                     1 -> PersonasTab(
                         settings = settings,
+                        customPersonas = customPersonas,
                         onSelectPersona = {
                             onSelectPersona(it)
                             selectedTab = 0
                         },
+                        onCreateCustomPersona = onCreateCustomPersona,
+                        onDeleteCustomPersona = onDeleteCustomPersona,
                         onSelectVoice = onSelectVoice
                     )
-                    2 -> LogsTab(uiState = uiState, onClearLogs = onClearLogs)
-                    3 -> ToolsTab(
+                    2 -> MemoryTab(
+                        memories = memories,
+                        onAddMemory = onAddMemory,
+                        onDeleteMemory = onDeleteMemory
+                    )
+                    3 -> LogsTab(
+                        uiState = uiState,
+                        transcripts = transcripts,
+                        onClearLogs = onClearLogs,
+                        onClearTranscripts = onClearTranscripts
+                    )
+                    4 -> ToolsTab(
                         uiState = uiState,
                         updateStatus = updateStatus,
                         onToggleFlashlight = onToggleFlashlight,
@@ -161,17 +205,17 @@ fun HomeScreen(
                 }
             }
 
-            // Floating Glassmorphic Navigation Bar
+            // Floating 5-Tab Glassmorphic Navigation Bar
             GlassCard(
                 shape = RoundedCornerShape(28.dp),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 12.dp)
+                    .padding(horizontal = 14.dp, vertical = 10.dp)
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 8.dp, vertical = 8.dp),
+                        .padding(horizontal = 6.dp, vertical = 7.dp),
                     horizontalArrangement = Arrangement.SpaceEvenly,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -182,15 +226,15 @@ fun HomeScreen(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(20.dp))
                                 .background(
-                                    if (active) NeonPurple.copy(alpha = 0.28f) else Color.Transparent
+                                    if (active) NeonPurple.copy(alpha = 0.3f) else Color.Transparent
                                 )
                                 .border(
                                     width = if (active) 1.dp else 0.dp,
-                                    color = if (active) NeonCyan.copy(alpha = 0.6f) else Color.Transparent,
+                                    color = if (active) NeonCyan.copy(alpha = 0.65f) else Color.Transparent,
                                     shape = RoundedCornerShape(20.dp)
                                 )
                                 .clickable { selectedTab = index }
-                                .padding(horizontal = 12.dp, vertical = 8.dp)
+                                .padding(horizontal = if (active) 11.dp else 9.dp, vertical = 8.dp)
                         ) {
                             Icon(
                                 imageVector = tab.icon,
@@ -199,13 +243,13 @@ fun HomeScreen(
                                 modifier = Modifier.size(18.dp)
                             )
                             if (active) {
-                                Spacer(modifier = Modifier.width(6.dp))
+                                Spacer(modifier = Modifier.width(5.dp))
                                 Text(
                                     text = tab.label,
                                     color = TextPrimary,
-                                    fontSize = 11.sp,
+                                    fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold,
-                                    letterSpacing = 1.sp
+                                    letterSpacing = 0.8.sp
                                 )
                             }
                         }
@@ -220,10 +264,13 @@ fun HomeScreen(
 private fun OrbTab(
     uiState: SuzyUiState,
     settings: SuzySettings,
+    memoryCount: Int,
     onStartClick: () -> Unit,
     onStopClick: () -> Unit,
     onToggleMute: () -> Unit,
     onToggleSpeaker: () -> Unit,
+    onToggleCaptions: () -> Unit,
+    onSelectMood: (MoodOption) -> Unit,
     onQuickReaction: (String) -> Unit,
     onInterruptClick: () -> Unit,
     onOpenSettings: () -> Unit
@@ -251,54 +298,80 @@ private fun OrbTab(
             GlassCard(
                 shape = RoundedCornerShape(18.dp),
                 accentBorder = NeonPurple,
-                modifier = Modifier.padding(end = 8.dp)
+                modifier = Modifier.weight(1f).padding(end = 8.dp)
             ) {
-                Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)) {
+                Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
                     Text(
                         text = settings.activePersonaName.uppercase(),
                         color = TextPrimary,
-                        fontSize = 17.sp,
+                        fontSize = 16.sp,
                         fontWeight = FontWeight.Bold,
-                        letterSpacing = 2.sp
+                        letterSpacing = 1.8.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                     Text(
-                        text = "${settings.voiceName}  •  ${if (uiState.isSpeakerOn) "SPEAKER" else "EARPIECE"}",
+                        text = "${settings.voiceName} • ${if (uiState.isSpeakerOn) "SPEAKER" else "EAR"} • ${memoryCount} MEM",
                         color = NeonCyan,
-                        fontSize = 10.sp,
-                        letterSpacing = 1.sp
+                        fontSize = 9.sp,
+                        letterSpacing = 0.8.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                GlassCard(
+                    shape = CircleShape,
+                    accentBorder = if (settings.captionsEnabled) NeonPurple else null
+                ) {
+                    IconButton(onClick = onToggleCaptions, modifier = Modifier.size(40.dp)) {
+                        Icon(
+                            imageVector = if (settings.captionsEnabled) Icons.Rounded.Subtitles else Icons.Rounded.SubtitlesOff,
+                            contentDescription = "Live Captions",
+                            tint = if (settings.captionsEnabled) NeonCyan else TextSecondary,
+                            modifier = Modifier.size(19.dp)
+                        )
+                    }
+                }
+
                 GlassCard(
                     shape = CircleShape,
                     accentBorder = if (uiState.isSpeakerOn) NeonCyan else null
                 ) {
-                    IconButton(onClick = onToggleSpeaker, modifier = Modifier.size(44.dp)) {
+                    IconButton(onClick = onToggleSpeaker, modifier = Modifier.size(40.dp)) {
                         Icon(
                             imageVector = if (uiState.isSpeakerOn) Icons.Rounded.VolumeUp else Icons.Rounded.PhoneInTalk,
                             contentDescription = "Speaker Toggle",
-                            tint = if (uiState.isSpeakerOn) NeonCyan else TextPrimary
+                            tint = if (uiState.isSpeakerOn) NeonCyan else TextPrimary,
+                            modifier = Modifier.size(19.dp)
                         )
                     }
                 }
 
                 GlassCard(shape = CircleShape) {
-                    IconButton(onClick = onOpenSettings, modifier = Modifier.size(44.dp)) {
-                        Icon(Icons.Rounded.Settings, contentDescription = "Settings", tint = TextPrimary)
+                    IconButton(onClick = onOpenSettings, modifier = Modifier.size(40.dp)) {
+                        Icon(
+                            imageVector = Icons.Rounded.Settings,
+                            contentDescription = "Settings",
+                            tint = TextPrimary,
+                            modifier = Modifier.size(19.dp)
+                        )
                     }
                 }
             }
         }
 
-        // Center ORB + Glass Status Pill
+        // Center ORB + Status Pill + Live Captions HUD
         Column(
-            modifier = Modifier.align(Alignment.Center),
+            modifier = Modifier
+                .align(Alignment.Center)
+                .padding(bottom = 26.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             SuzyOrb(state = uiState.state, amplitude = uiState.amplitude)
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(10.dp))
             GlassCard(
                 shape = RoundedCornerShape(50),
                 accentBorder = when (uiState.state) {
@@ -309,27 +382,89 @@ private fun OrbTab(
                 }
             ) {
                 Text(
-                    text = uiState.statusText,
+                    text = if (isActive) "${uiState.statusText}  •  LOCK-SCREEN READY" else uiState.statusText,
                     color = TextPrimary,
-                    fontSize = 13.sp,
-                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 9.dp),
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 7.dp),
                     textAlign = TextAlign.Center
                 )
             }
+
+            // Live Captions HUD
+            val captionToShow = uiState.liveCaption.ifBlank { uiState.lastCaption }
+            if (settings.captionsEnabled && isActive && captionToShow.isNotBlank()) {
+                Spacer(modifier = Modifier.height(10.dp))
+                GlassCard(
+                    shape = RoundedCornerShape(16.dp),
+                    accentBorder = NeonPink,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp)
+                ) {
+                    Text(
+                        text = captionToShow,
+                        color = TextPrimary,
+                        fontSize = 12.sp,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 9.dp)
+                    )
+                }
+            }
         }
 
-        // Bottom Controls
+        // Bottom Controls: Live Mood Switcher + Quick Emotions + Call Button
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .align(Alignment.BottomCenter)
-                .padding(bottom = 4.dp),
+                .padding(bottom = 2.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            // Live Mood Switcher Strip
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(bottom = 10.dp)
+            ) {
+                SuzyCatalog.moods.forEach { mood ->
+                    val selected = settings.activeMoodId == mood.id
+                    GlassCard(
+                        shape = RoundedCornerShape(50),
+                        accentBorder = if (selected) mood.color else null,
+                        modifier = Modifier.clickable { onSelectMood(mood) }
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Mood,
+                                contentDescription = mood.label,
+                                tint = if (selected) mood.color else TextSecondary,
+                                modifier = Modifier.size(13.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = mood.label,
+                                color = if (selected) TextPrimary else TextSecondary,
+                                fontSize = 10.sp,
+                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
+                            )
+                        }
+                    }
+                }
+            }
+
             if (isActive) {
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.padding(bottom = 14.dp)
+                    modifier = Modifier.padding(bottom = 12.dp)
                 ) {
                     emotions.forEach { item ->
                         GlassCard(
@@ -339,10 +474,10 @@ private fun OrbTab(
                         ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(horizontal = 11.dp, vertical = 7.dp)
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                             ) {
                                 Icon(item.icon, contentDescription = item.label, tint = item.tint, modifier = Modifier.size(14.dp))
-                                Spacer(modifier = Modifier.width(5.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
                                 Text(item.label, color = TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.Medium)
                             }
                         }
@@ -360,7 +495,7 @@ private fun OrbTab(
                         shape = CircleShape,
                         accentBorder = if (uiState.isMuted) Color(0xFFEF4444) else NeonCyan
                     ) {
-                        IconButton(onClick = onToggleMute, modifier = Modifier.size(52.dp)) {
+                        IconButton(onClick = onToggleMute, modifier = Modifier.size(50.dp)) {
                             Icon(
                                 imageVector = if (uiState.isMuted) Icons.Rounded.MicOff else Icons.Rounded.Mic,
                                 contentDescription = "Mute",
@@ -374,8 +509,8 @@ private fun OrbTab(
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier
-                        .height(58.dp)
-                        .width(190.dp)
+                        .height(56.dp)
+                        .width(186.dp)
                         .clip(RoundedCornerShape(32.dp))
                         .background(
                             if (isActive) {
@@ -394,11 +529,11 @@ private fun OrbTab(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = if (isActive) "STOP" else "START",
+                            text = if (isActive) "END CALL" else "START CALL",
                             color = Color.White,
                             fontWeight = FontWeight.Bold,
-                            fontSize = 16.sp,
-                            letterSpacing = 1.8.sp
+                            fontSize = 15.sp,
+                            letterSpacing = 1.4.sp
                         )
                     }
                 }
@@ -406,7 +541,7 @@ private fun OrbTab(
                 if (isActive) {
                     Spacer(modifier = Modifier.width(16.dp))
                     GlassCard(shape = CircleShape, accentBorder = NeonPink) {
-                        IconButton(onClick = onInterruptClick, modifier = Modifier.size(52.dp)) {
+                        IconButton(onClick = onInterruptClick, modifier = Modifier.size(50.dp)) {
                             Icon(Icons.Rounded.GraphicEq, contentDescription = "Interrupt", tint = NeonPink)
                         }
                     }
@@ -419,24 +554,63 @@ private fun OrbTab(
 @Composable
 private fun PersonasTab(
     settings: SuzySettings,
+    customPersonas: List<PersonaProfile>,
     onSelectPersona: (PersonaProfile) -> Unit,
+    onCreateCustomPersona: (String, String, String, Long, String) -> Unit,
+    onDeleteCustomPersona: (String) -> Unit,
     onSelectVoice: (String) -> Unit
 ) {
-    Column(modifier = Modifier.fillMaxSize()) {
-        Text(
-            text = "GIRL PERSONAS & VOICES",
-            color = NeonCyan,
-            fontSize = 15.sp,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 1.6.sp
-        )
-        Text(
-            text = "Har persona ka apna alag behavior aur voice style hai",
-            color = TextSecondary,
-            fontSize = 12.sp
-        )
+    var showBuilder by remember { mutableStateOf(false) }
+    val allPersonas = customPersonas + SuzyCatalog.personas
 
-        Spacer(modifier = Modifier.height(12.dp))
+    if (showBuilder) {
+        CustomPersonaDialog(
+            onDismiss = { showBuilder = false },
+            onSave = { name, role, voice, colorHex, prompt ->
+                onCreateCustomPersona(name, role, voice, colorHex, prompt)
+                showBuilder = false
+            }
+        )
+    }
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "PERSONAS & VOICES",
+                    color = NeonCyan,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.5.sp
+                )
+                Text(
+                    text = "${allPersonas.size} Personas • ${SuzyCatalog.femaleVoices.size} Female Voices",
+                    color = TextSecondary,
+                    fontSize = 11.sp
+                )
+            }
+
+            GlassCard(
+                shape = RoundedCornerShape(14.dp),
+                accentBorder = NeonPink,
+                modifier = Modifier.clickable { showBuilder = true }
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                ) {
+                    Icon(Icons.Rounded.Add, contentDescription = "Create", tint = NeonPink, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("CREATE", color = TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
 
         // Quick Female Voice Strip
         Row(
@@ -454,7 +628,7 @@ private fun PersonasTab(
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                        modifier = Modifier.padding(horizontal = 11.dp, vertical = 7.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.RecordVoiceOver,
@@ -472,7 +646,7 @@ private fun PersonasTab(
             }
         }
 
-        Spacer(modifier = Modifier.height(14.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
         LazyVerticalGrid(
             columns = GridCells.Fixed(2),
@@ -481,7 +655,7 @@ private fun PersonasTab(
             contentPadding = PaddingValues(bottom = 8.dp),
             modifier = Modifier.weight(1f)
         ) {
-            items(SuzyCatalog.personas) { persona ->
+            items(allPersonas, key = { it.id }) { persona ->
                 val isSelected = settings.activePersonaName.equals(persona.name, ignoreCase = true)
                 GlassCard(
                     shape = RoundedCornerShape(20.dp),
@@ -490,7 +664,7 @@ private fun PersonasTab(
                         .fillMaxWidth()
                         .clickable { onSelectPersona(persona) }
                 ) {
-                    Column(modifier = Modifier.padding(14.dp)) {
+                    Column(modifier = Modifier.padding(13.dp)) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -499,33 +673,49 @@ private fun PersonasTab(
                             Box(
                                 contentAlignment = Alignment.Center,
                                 modifier = Modifier
-                                    .size(36.dp)
+                                    .size(34.dp)
                                     .clip(CircleShape)
-                                    .background(persona.accentColor.copy(alpha = 0.2f))
+                                    .background(persona.accentColor.copy(alpha = 0.22f))
                             ) {
                                 Icon(
                                     imageVector = persona.icon,
                                     contentDescription = persona.name,
                                     tint = persona.accentColor,
-                                    modifier = Modifier.size(20.dp)
+                                    modifier = Modifier.size(18.dp)
                                 )
                             }
-                            if (isSelected) {
-                                Text(
-                                    text = "ACTIVE",
-                                    color = persona.accentColor,
-                                    fontSize = 9.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    letterSpacing = 1.sp
-                                )
+
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                if (isSelected) {
+                                    Text(
+                                        text = "ACTIVE",
+                                        color = persona.accentColor,
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        letterSpacing = 0.8.sp
+                                    )
+                                }
+                                if (persona.isCustom) {
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Icon(
+                                        imageVector = Icons.Rounded.Delete,
+                                        contentDescription = "Delete Custom",
+                                        tint = TextSecondary,
+                                        modifier = Modifier
+                                            .size(16.dp)
+                                            .clickable { onDeleteCustomPersona(persona.id) }
+                                    )
+                                }
                             }
                         }
-                        Spacer(modifier = Modifier.height(10.dp))
+                        Spacer(modifier = Modifier.height(8.dp))
                         Text(
                             text = persona.name,
                             color = TextPrimary,
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                         Text(
                             text = persona.role,
@@ -534,9 +724,9 @@ private fun PersonasTab(
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
-                        Spacer(modifier = Modifier.height(6.dp))
+                        Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "Voice: ${persona.voiceName}",
+                            text = if (persona.isCustom) "Custom • ${persona.voiceName}" else "Voice: ${persona.voiceName}",
                             color = TextSecondary,
                             fontSize = 10.sp
                         )
@@ -548,34 +738,311 @@ private fun PersonasTab(
 }
 
 @Composable
-private fun LogsTab(uiState: SuzyUiState, onClearLogs: () -> Unit) {
+private fun CustomPersonaDialog(
+    onDismiss: () -> Unit,
+    onSave: (String, String, String, Long, String) -> Unit
+) {
+    var name by remember { mutableStateOf("") }
+    var role by remember { mutableStateOf("") }
+    var selectedVoice by remember { mutableStateOf("Aoede") }
+    var selectedHex by remember { mutableLongStateOf(0xFFEC4899L) }
+    var prompt by remember {
+        mutableStateOf("Tum user ki bahut sweet aur expressive Indian girlfriend ho. Pyaari natural Hinglish mein chhote (1-2 lines) dil se nikle jawab do.")
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Color(0xFF101226),
+        title = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Create Custom Persona", color = TextPrimary, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
+                    Icon(Icons.Rounded.Close, contentDescription = "Close", tint = TextSecondary)
+                }
+            }
+        },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.verticalScroll(rememberScrollState())
+            ) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Persona Name (e.g. Aarohi)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = role,
+                    onValueChange = { role = it },
+                    label = { Text("Vibe / Role (e.g. Sweet Crush)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Text("Select Voice", color = NeonCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.horizontalScroll(rememberScrollState())
+                ) {
+                    SuzyCatalog.femaleVoices.forEach { v ->
+                        FilterChip(
+                            selected = selectedVoice == v.id,
+                            onClick = { selectedVoice = v.id },
+                            label = { Text(v.id, fontSize = 11.sp) }
+                        )
+                    }
+                }
+
+                Text("Accent Color", color = NeonCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    SuzyCatalog.accentPresets.forEach { preset ->
+                        Box(
+                            modifier = Modifier
+                                .size(28.dp)
+                                .clip(CircleShape)
+                                .background(preset.color)
+                                .border(
+                                    width = if (selectedHex == preset.hex) 2.5.dp else 0.dp,
+                                    color = Color.White,
+                                    shape = CircleShape
+                                )
+                                .clickable { selectedHex = preset.hex }
+                        )
+                    }
+                }
+
+                OutlinedTextField(
+                    value = prompt,
+                    onValueChange = { prompt = it },
+                    label = { Text("Personality & Speaking Style") },
+                    minLines = 3,
+                    maxLines = 5,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    if (name.isNotBlank()) {
+                        onSave(name, role, selectedVoice, selectedHex, prompt)
+                    }
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = NeonPurple)
+            ) {
+                Text("SAVE PERSONA", fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("CANCEL", color = TextSecondary)
+            }
+        }
+    )
+}
+
+@Composable
+private fun MemoryTab(
+    memories: List<MemoryItem>,
+    onAddMemory: (String, String) -> Unit,
+    onDeleteMemory: (String) -> Unit
+) {
+    val categories = listOf("Profile", "Preference", "Routine", "Relationship")
+    var selectedCategory by remember { mutableStateOf("Profile") }
+    var inputText by remember { mutableStateOf("") }
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        Text(
+            text = "PERSONAL MEMORY VAULT",
+            color = NeonCyan,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 1.5.sp
+        )
+        Text(
+            text = "Jo yahan save karoge, Suzy ko har call par hamesha yaad rahega",
+            color = TextSecondary,
+            fontSize = 11.sp
+        )
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        GlassCard(shape = RoundedCornerShape(18.dp), accentBorder = NeonPurple, modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.horizontalScroll(rememberScrollState())
+                ) {
+                    categories.forEach { cat ->
+                        FilterChip(
+                            selected = selectedCategory == cat,
+                            onClick = { selectedCategory = cat },
+                            label = { Text(cat, fontSize = 11.sp) }
+                        )
+                    }
+                }
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(
+                        value = inputText,
+                        onValueChange = { inputText = it },
+                        placeholder = { Text("e.g. Mera naam Shahid hai...", fontSize = 12.sp) },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(
+                        onClick = {
+                            if (inputText.isNotBlank()) {
+                                onAddMemory(selectedCategory, inputText)
+                                inputText = ""
+                            }
+                        },
+                        shape = RoundedCornerShape(14.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = NeonPurple),
+                        modifier = Modifier.height(54.dp)
+                    ) {
+                        Icon(Icons.Rounded.Add, contentDescription = "Add Memory")
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        if (memories.isEmpty()) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text(
+                    text = "Abhi Memory Vault khaali hai.\nApna naam, pasand ya routine upar add karein!",
+                    color = TextSecondary,
+                    fontSize = 13.sp,
+                    textAlign = TextAlign.Center
+                )
+            }
+        } else {
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(memories, key = { it.id }) { mem ->
+                    GlassCard(shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 13.dp, vertical = 10.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                                Text(
+                                    text = "${mem.category.uppercase()}  •  ${mem.createdAt}",
+                                    color = NeonCyan,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Spacer(modifier = Modifier.height(3.dp))
+                                Text(text = mem.content, color = TextPrimary, fontSize = 13.sp)
+                            }
+                            IconButton(onClick = { onDeleteMemory(mem.id) }, modifier = Modifier.size(32.dp)) {
+                                Icon(Icons.Rounded.Delete, contentDescription = "Delete Memory", tint = TextSecondary, modifier = Modifier.size(18.dp))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LogsTab(
+    uiState: SuzyUiState,
+    transcripts: List<SavedTranscript>,
+    onClearLogs: () -> Unit,
+    onClearTranscripts: () -> Unit
+) {
+    var subTab by remember { mutableIntStateOf(0) } // 0 = Live Logs, 1 = Saved Call Transcripts
+
     Column(modifier = Modifier.fillMaxSize()) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("LIVE ACTIVITY LOGS", color = NeonCyan, fontSize = 15.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
-            IconButton(onClick = onClearLogs) {
-                Icon(Icons.Rounded.DeleteSweep, contentDescription = "Clear Logs", tint = TextSecondary)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(
+                    selected = subTab == 0,
+                    onClick = { subTab = 0 },
+                    label = { Text("LIVE LOGS (${uiState.logs.size})", fontSize = 11.sp) }
+                )
+                FilterChip(
+                    selected = subTab == 1,
+                    onClick = { subTab = 1 },
+                    label = { Text("TRANSCRIPTS (${transcripts.size})", fontSize = 11.sp) }
+                )
+            }
+
+            IconButton(onClick = { if (subTab == 0) onClearLogs() else onClearTranscripts() }) {
+                Icon(Icons.Rounded.DeleteSweep, contentDescription = "Clear", tint = TextSecondary)
             }
         }
+
         Spacer(modifier = Modifier.height(8.dp))
-        if (uiState.logs.isEmpty()) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("Abhi koi activity log nahi hai.", color = TextSecondary, fontSize = 14.sp)
+
+        if (subTab == 0) {
+            if (uiState.logs.isEmpty()) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("Abhi koi live activity log nahi hai.", color = TextSecondary, fontSize = 14.sp)
+                }
+            } else {
+                LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(uiState.logs.reversed()) { log ->
+                        GlassCard(shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    Text(log.source, color = NeonCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    Text(log.time, color = TextSecondary, fontSize = 11.sp)
+                                }
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(log.message, color = TextPrimary, fontSize = 13.sp)
+                            }
+                        }
+                    }
+                }
             }
         } else {
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(uiState.logs.reversed()) { log ->
-                    GlassCard(shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
-                        Column(modifier = Modifier.padding(12.dp)) {
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text(log.source, color = NeonCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                Text(log.time, color = TextSecondary, fontSize = 11.sp)
+            if (transcripts.isEmpty()) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text(
+                        text = "Abhi koi saved call transcript nahi hai.\nCall end karne par poori baat yahan save ho jayegi.",
+                        color = TextSecondary,
+                        fontSize = 13.sp,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            } else {
+                LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    items(transcripts, key = { it.id }) { item ->
+                        GlassCard(shape = RoundedCornerShape(16.dp), accentBorder = NeonPurple, modifier = Modifier.fillMaxWidth()) {
+                            Column(modifier = Modifier.padding(14.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(
+                                        text = "${item.personaName.uppercase()}  •  ${item.durationLabel}",
+                                        color = NeonPink,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(text = item.dateTime, color = TextSecondary, fontSize = 10.sp)
+                                }
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(text = item.dialogue, color = TextPrimary, fontSize = 12.sp, lineHeight = 18.sp)
                             }
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(log.message, color = TextPrimary, fontSize = 13.sp)
                         }
                     }
                 }
