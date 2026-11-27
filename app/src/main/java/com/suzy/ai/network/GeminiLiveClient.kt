@@ -28,9 +28,13 @@ class GeminiLiveClient(
         .build()
 
     private var webSocket: WebSocket? = null
+    @Volatile
+    private var isGemini38: Boolean = true
 
     fun connect(settings: SuzySettings) {
         disconnect()
+
+        isGemini38 = settings.modelId.contains("3.8", ignoreCase = true)
 
         val wsUrl = "wss://generativelanguage.googleapis.com/ws/" +
             "google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent" +
@@ -74,67 +78,82 @@ class GeminiLiveClient(
             "models/${settings.modelId}"
         }
 
-        val setupJson = JSONObject().apply {
-            put("setup", JSONObject().apply {
-                put("model", modelName)
-                put("generationConfig", JSONObject().apply {
-                    put("temperature", settings.temperature.toDouble())
-                    put("responseModalities", JSONArray().put("AUDIO"))
-                    put("speechConfig", JSONObject().apply {
-                        put("voiceConfig", JSONObject().apply {
-                            put("prebuiltVoiceConfig", JSONObject().apply {
-                                put("voiceName", settings.voiceName)
-                            })
+        val setupBody = JSONObject().apply {
+            put("model", modelName)
+            put("generationConfig", JSONObject().apply {
+                put("temperature", settings.temperature.toDouble())
+                put("responseModalities", JSONArray().put("AUDIO"))
+                put("speechConfig", JSONObject().apply {
+                    put("voiceConfig", JSONObject().apply {
+                        put("prebuiltVoiceConfig", JSONObject().apply {
+                            put("voiceName", settings.voiceName)
                         })
                     })
                 })
-                put("realtimeInputConfig", JSONObject().apply {
-                    put("automaticActivityDetection", JSONObject().apply {
-                        put("startOfSpeechSensitivity", "START_SENSITIVITY_HIGH")
-                        put("endOfSpeechSensitivity", "END_SENSITIVITY_HIGH")
-                        put("prefixPaddingMs", 100)
-                        put("silenceDurationMs", 400)
-                    })
-                })
-                put("systemInstruction", JSONObject().apply {
-                    put("parts", JSONArray().put(JSONObject().apply {
-                        put("text", settings.systemPrompt)
-                    }))
-                })
             })
+            put("outputAudioTranscription", JSONObject())
+            put("systemInstruction", JSONObject().apply {
+                put("parts", JSONArray().put(JSONObject().apply {
+                    put("text", settings.systemPrompt)
+                }))
+            })
+        }
+
+        val setupJson = JSONObject().apply {
+            put("setup", setupBody)
         }
         ws.send(setupJson.toString())
     }
 
     fun sendPcmAudio(pcmBytes: ByteArray) {
         val ws = webSocket ?: return
-        // Drop stale frames if network slows down so 1-2 min delay NEVER builds up
         if (ws.queueSize() > 65536L) return
 
         val b64 = Base64.encodeToString(pcmBytes, Base64.NO_WRAP)
-        val payload = JSONObject().apply {
-            put("realtimeInput", JSONObject().apply {
-                put("mediaChunks", JSONArray().put(JSONObject().apply {
-                    put("mimeType", "audio/pcm;rate=16000")
-                    put("data", b64)
-                }))
-            })
+        val payload = if (isGemini38) {
+            // Gemini 3.8 Live official WebSocket audio format
+            JSONObject().apply {
+                put("realtimeInput", JSONObject().apply {
+                    put("audio", JSONObject().apply {
+                        put("mimeType", "audio/pcm;rate=16000")
+                        put("data", b64)
+                    })
+                })
+            }
+        } else {
+            // Legacy 2.5 Live format
+            JSONObject().apply {
+                put("realtimeInput", JSONObject().apply {
+                    put("mediaChunks", JSONArray().put(JSONObject().apply {
+                        put("mimeType", "audio/pcm;rate=16000")
+                        put("data", b64)
+                    }))
+                })
+            }
         }
         ws.send(payload.toString())
     }
 
     fun sendReactionPrompt(promptText: String) {
         val ws = webSocket ?: return
-        val payload = JSONObject().apply {
-            put("clientContent", JSONObject().apply {
-                put("turns", JSONArray().put(JSONObject().apply {
-                    put("role", "user")
-                    put("parts", JSONArray().put(JSONObject().apply {
-                        put("text", promptText)
+        val payload = if (isGemini38) {
+            JSONObject().apply {
+                put("realtimeInput", JSONObject().apply {
+                    put("text", promptText)
+                })
+            }
+        } else {
+            JSONObject().apply {
+                put("clientContent", JSONObject().apply {
+                    put("turns", JSONArray().put(JSONObject().apply {
+                        put("role", "user")
+                        put("parts", JSONArray().put(JSONObject().apply {
+                            put("text", promptText)
+                        }))
                     }))
-                }))
-                put("turnComplete", true)
-            })
+                    put("turnComplete", true)
+                })
+            }
         }
         ws.send(payload.toString())
     }
@@ -147,6 +166,7 @@ class GeminiLiveClient(
                     put("id", callId)
                     put("name", name)
                     put("response", JSONObject().apply {
+                        put("status", "ok")
                         put("result", resultText)
                     })
                 }))
@@ -169,6 +189,14 @@ class GeminiLiveClient(
             if (serverContent.optBoolean("interrupted", false)) {
                 onInterrupted()
                 return
+            }
+
+            val outputTranscript = serverContent.optJSONObject("outputTranscription")
+            if (outputTranscript != null) {
+                val transcriptText = outputTranscript.optString("text", "")
+                if (transcriptText.isNotBlank()) {
+                    onTextOutput(transcriptText)
+                }
             }
 
             val modelTurn = serverContent.optJSONObject("modelTurn")

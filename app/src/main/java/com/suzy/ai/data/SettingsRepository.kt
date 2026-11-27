@@ -13,7 +13,7 @@ private val Context.dataStore by preferencesDataStore(name = "suzy_settings")
 
 data class SuzySettings(
     val apiKey: String = "",
-    val modelId: String = "models/gemini-2.5-flash-native-audio-preview-12-2025",
+    val modelId: String = "models/gemini-3.8-live",
     val voiceName: String = "Aoede",
     val activePersonaName: String = "Suzy",
     val systemPrompt: String = DEFAULT_SUZY_PROMPT,
@@ -39,7 +39,7 @@ class SettingsRepository(private val context: Context) {
     val settingsFlow: Flow<SuzySettings> = context.dataStore.data.map { prefs ->
         SuzySettings(
             apiKey = prefs[Keys.API_KEY] ?: "",
-            modelId = prefs[Keys.MODEL_ID] ?: "models/gemini-2.5-flash-native-audio-preview-12-2025",
+            modelId = prefs[Keys.MODEL_ID] ?: "models/gemini-3.8-live",
             voiceName = prefs[Keys.VOICE_NAME] ?: "Aoede",
             activePersonaName = prefs[Keys.PERSONA_NAME] ?: "Suzy",
             systemPrompt = prefs[Keys.SYSTEM_PROMPT] ?: SuzySettings.DEFAULT_SUZY_PROMPT,
