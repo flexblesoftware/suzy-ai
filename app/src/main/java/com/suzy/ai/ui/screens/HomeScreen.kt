@@ -32,6 +32,8 @@ import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.BatteryChargingFull
 import androidx.compose.material.icons.rounded.BatteryStd
 import androidx.compose.material.icons.rounded.Build
+import androidx.compose.material.icons.rounded.Campaign
+import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.DeleteSweep
@@ -41,22 +43,27 @@ import androidx.compose.material.icons.rounded.FlashlightOff
 import androidx.compose.material.icons.rounded.FlashlightOn
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.History
-import androidx.compose.material.icons.rounded.Launch
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.MicOff
 import androidx.compose.material.icons.rounded.Mood
+import androidx.compose.material.icons.rounded.NotificationsActive
+import androidx.compose.material.icons.rounded.PhoneCallback
 import androidx.compose.material.icons.rounded.PhoneInTalk
 import androidx.compose.material.icons.rounded.PowerSettingsNew
 import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.RecordVoiceOver
 import androidx.compose.material.icons.rounded.SentimentVerySatisfied
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material.icons.rounded.Spa
+import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.Subtitles
 import androidx.compose.material.icons.rounded.SubtitlesOff
 import androidx.compose.material.icons.rounded.SystemUpdate
+import androidx.compose.material.icons.rounded.Timer
 import androidx.compose.material.icons.rounded.VolumeUp
+import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -64,6 +71,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -116,7 +124,7 @@ private data class NavTab(
     val icon: ImageVector
 )
 
-private fun formatCallDuration(totalSeconds: Long): String {
+private fun formatDuration(totalSeconds: Long): String {
     val mins = totalSeconds / 60L
     val secs = totalSeconds % 60L
     return String.format(Locale.US, "%02d:%02d", mins, secs)
@@ -142,8 +150,19 @@ fun HomeScreen(
     onSelectVoice: (String) -> Unit,
     onAddMemory: (String, String) -> Unit,
     onDeleteMemory: (String) -> Unit,
+    onToggleCallAnnouncer: (Boolean) -> Unit,
+    onToggleAnnounceCallerName: (Boolean) -> Unit,
+    onSetAnnouncerRepeat: (Int) -> Unit,
+    onSetAnnouncerStyle: (String) -> Unit,
+    onToggleBackgroundGuard: (Boolean) -> Unit,
+    onTestCallAnnouncement: () -> Unit,
+    onRequestAllPermissions: () -> Unit,
+    onRequestBatteryExemption: () -> Unit,
+    onRefreshGuardAndPermissions: () -> Unit,
     onToggleFlashlight: () -> Unit,
-    onOpenApp: (String) -> Unit,
+    onTestServerPing: () -> Unit,
+    onStartTimer: (Int) -> Unit,
+    onCancelTimer: () -> Unit,
     onRefreshTelemetry: () -> Unit,
     onCheckUpdate: () -> Unit,
     onClearTranscripts: () -> Unit,
@@ -156,11 +175,14 @@ fun HomeScreen(
         NavTab("ORB", Icons.Rounded.GraphicEq),
         NavTab("PERSONAS", Icons.Rounded.Face),
         NavTab("MEMORY", Icons.Rounded.Psychology),
+        NavTab("CALLS", Icons.Rounded.NotificationsActive),
         NavTab("TOOLS", Icons.Rounded.Build)
     )
 
     LaunchedEffect(selectedTab) {
         if (selectedTab == 3) {
+            onRefreshGuardAndPermissions()
+        } else if (selectedTab == 4) {
             onRefreshTelemetry()
         }
     }
@@ -207,12 +229,26 @@ fun HomeScreen(
                         onAddMemory = onAddMemory,
                         onDeleteMemory = onDeleteMemory
                     )
-                    3 -> ToolsTab(
+                    3 -> CallGuardTab(
+                        uiState = uiState,
+                        settings = settings,
+                        onToggleCallAnnouncer = onToggleCallAnnouncer,
+                        onToggleAnnounceCallerName = onToggleAnnounceCallerName,
+                        onSetAnnouncerRepeat = onSetAnnouncerRepeat,
+                        onSetAnnouncerStyle = onSetAnnouncerStyle,
+                        onToggleBackgroundGuard = onToggleBackgroundGuard,
+                        onTestCallAnnouncement = onTestCallAnnouncement,
+                        onRequestAllPermissions = onRequestAllPermissions,
+                        onRequestBatteryExemption = onRequestBatteryExemption
+                    )
+                    4 -> ToolsTab(
                         uiState = uiState,
                         transcripts = transcripts,
                         updateStatus = updateStatus,
                         onToggleFlashlight = onToggleFlashlight,
-                        onOpenApp = onOpenApp,
+                        onTestServerPing = onTestServerPing,
+                        onStartTimer = onStartTimer,
+                        onCancelTimer = onCancelTimer,
                         onClearTranscripts = onClearTranscripts,
                         onCheckUpdate = onCheckUpdate,
                         onOpenSettings = onOpenSettings
@@ -220,17 +256,17 @@ fun HomeScreen(
                 }
             }
 
-            // Floating 4-Tab Glassmorphic Navigation Bar (LOGS completely removed)
+            // Floating 5-Tab Glassmorphic Navigation Bar (ORB, PERSONAS, MEMORY, CALLS, TOOLS)
             GlassCard(
                 shape = RoundedCornerShape(28.dp),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 10.dp)
+                    .padding(horizontal = 14.dp, vertical = 9.dp)
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 8.dp, vertical = 8.dp),
+                        .padding(horizontal = 6.dp, vertical = 7.dp),
                     horizontalArrangement = Arrangement.SpaceEvenly,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -249,7 +285,7 @@ fun HomeScreen(
                                     shape = RoundedCornerShape(20.dp)
                                 )
                                 .clickable { selectedTab = index }
-                                .padding(horizontal = 13.dp, vertical = 8.dp)
+                                .padding(horizontal = if (active) 11.dp else 9.dp, vertical = 8.dp)
                         ) {
                             Icon(
                                 imageVector = tab.icon,
@@ -258,13 +294,13 @@ fun HomeScreen(
                                 modifier = Modifier.size(18.dp)
                             )
                             if (active) {
-                                Spacer(modifier = Modifier.width(6.dp))
+                                Spacer(modifier = Modifier.width(5.dp))
                                 Text(
                                     text = tab.label,
                                     color = TextPrimary,
-                                    fontSize = 11.sp,
+                                    fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold,
-                                    letterSpacing = 0.9.sp
+                                    letterSpacing = 0.8.sp
                                 )
                             }
                         }
@@ -312,7 +348,7 @@ private fun OrbTab(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.SpaceBetween
     ) {
-        // Section 1: Glass Top Header with Live Timer
+        // Section 1: Glass Top Header
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -337,7 +373,7 @@ private fun OrbTab(
                         if (isActive && uiState.callDurationSec > 0L) {
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = formatCallDuration(uiState.callDurationSec),
+                                text = formatDuration(uiState.callDurationSec),
                                 color = NeonPink,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold
@@ -645,7 +681,6 @@ private fun PersonasTab(
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // Section 1: Header & Custom Persona Button
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -684,7 +719,6 @@ private fun PersonasTab(
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        // Section 2: 12 Female Voices Strip (Instant Live Switch)
         Text(
             text = "SECTION 1 • FEMALE VOICES (12)",
             color = TextSecondary,
@@ -728,7 +762,6 @@ private fun PersonasTab(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Section 3: Hardcoded & Custom Persona Cards (Clean Taglines, Zero Raw Prompt Clutter)
         Text(
             text = "SECTION 2 • GIRL COMPANION PERSONAS (${allPersonas.size})",
             color = TextSecondary,
@@ -974,7 +1007,6 @@ private fun MemoryTab(
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        // Section 1: Add Memory Card
         Text(
             text = "SECTION 1 • ADD NEW MEMORY",
             color = TextSecondary,
@@ -1026,7 +1058,6 @@ private fun MemoryTab(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Section 2: Saved Memories List
         Text(
             text = "SECTION 2 • SAVED MEMORIES (${memories.size})",
             color = TextSecondary,
@@ -1078,12 +1109,281 @@ private fun MemoryTab(
 }
 
 @Composable
+private fun CallGuardTab(
+    uiState: SuzyUiState,
+    settings: SuzySettings,
+    onToggleCallAnnouncer: (Boolean) -> Unit,
+    onToggleAnnounceCallerName: (Boolean) -> Unit,
+    onSetAnnouncerRepeat: (Int) -> Unit,
+    onSetAnnouncerStyle: (String) -> Unit,
+    onToggleBackgroundGuard: (Boolean) -> Unit,
+    onTestCallAnnouncement: () -> Unit,
+    onRequestAllPermissions: () -> Unit,
+    onRequestBatteryExemption: () -> Unit
+) {
+    val styles = listOf("Girlfriend", "Bestie", "Jarvis")
+    val perms = uiState.permissions
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        // Header
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "CALL ANNOUNCER & GUARD",
+                    color = NeonCyan,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.4.sp
+                )
+                Text(
+                    text = "Incoming phone call par caller ka naam bolegi + 24/7 background guard",
+                    color = TextSecondary,
+                    fontSize = 11.sp
+                )
+            }
+
+            GlassCard(
+                shape = RoundedCornerShape(50),
+                accentBorder = if (uiState.isGuardRunning) Color(0xFF34D399) else NeonPink
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Shield,
+                        contentDescription = null,
+                        tint = if (uiState.isGuardRunning) Color(0xFF34D399) else NeonPink,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = if (uiState.isGuardRunning) "GUARD ON" else "GUARD OFF",
+                        color = TextPrimary,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
+
+        // Section 1: Incoming Call Voice Announcer
+        Text("SECTION 1 • INCOMING CALL VOICE ANNOUNCER", color = TextSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+        GlassCard(shape = RoundedCornerShape(20.dp), accentBorder = NeonPink, modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Incoming Call Announcement", color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                        Text("Phone call aane par voice mein alert karegi", color = TextSecondary, fontSize = 11.sp)
+                    }
+                    Switch(checked = settings.callAnnouncerEnabled, onCheckedChange = onToggleCallAnnouncer)
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Speak Saved Caller Name", color = TextPrimary, fontSize = 13.sp)
+                        Text("Contacts se naam padh kar sunayegi", color = TextSecondary, fontSize = 11.sp)
+                    }
+                    Switch(checked = settings.announceCallerName, onCheckedChange = onToggleAnnounceCallerName)
+                }
+
+                Text("Announcement Style", color = NeonCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    styles.forEach { st ->
+                        FilterChip(
+                            selected = settings.announcerStyle.equals(st, ignoreCase = true),
+                            onClick = { onSetAnnouncerStyle(st) },
+                            label = { Text(st, fontSize = 11.sp) }
+                        )
+                    }
+                }
+
+                Text("Repeat While Ringing", color = NeonCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(1, 2, 3).forEach { count ->
+                        FilterChip(
+                            selected = settings.announcerRepeatCount == count,
+                            onClick = { onSetAnnouncerRepeat(count) },
+                            label = { Text("${count}x", fontSize = 11.sp) }
+                        )
+                    }
+                }
+
+                Button(
+                    onClick = onTestCallAnnouncement,
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = NeonPink),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Rounded.Campaign, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("TEST CALL ANNOUNCEMENT", fontWeight = FontWeight.Bold)
+                }
+
+                uiState.lastAnnouncedCall?.let { last ->
+                    GlassCard(shape = RoundedCornerShape(12.dp), accentBorder = NeonCyan, modifier = Modifier.fillMaxWidth()) {
+                        Column(modifier = Modifier.padding(10.dp)) {
+                            Text("LAST ANNOUNCED • ${last.time}", color = NeonCyan, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                            Text("${last.callerName}: \"${last.spokenText}\"", color = TextPrimary, fontSize = 11.sp)
+                        }
+                    }
+                }
+            }
+        }
+
+        // Section 2: Foreground Services Control
+        Text("SECTION 2 • FOREGROUND SERVICES & SCREEN-OFF SHIELD", color = TextSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+        GlassCard(shape = RoundedCornerShape(18.dp), accentBorder = NeonPurple, modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("24/7 Background Call Guard Service", color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                        Text("App close ya screen off hone par bhi incoming call detect karega", color = TextSecondary, fontSize = 11.sp)
+                    }
+                    Switch(checked = settings.backgroundGuardEnabled, onCheckedChange = onToggleBackgroundGuard)
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Rounded.PhoneCallback, contentDescription = null, tint = NeonCyan, modifier = Modifier.size(15.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Live AI Call Foreground Service: Auto-Active on Start Call",
+                        color = NeonCyan,
+                        fontSize = 11.sp
+                    )
+                }
+            }
+        }
+
+        // Section 3: Permissions & System Readiness Hub
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "SECTION 3 • REQUIRED PERMISSIONS (${perms.grantedCount}/5)",
+                color = TextSecondary,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.sp
+            )
+            if (!perms.allGranted) {
+                Text(
+                    text = "GRANT ALL",
+                    color = NeonCyan,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.clickable { onRequestAllPermissions() }
+                )
+            }
+        }
+
+        GlassCard(shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                PermissionStatusRow(
+                    title = "Microphone (Live Voice)",
+                    granted = perms.micGranted,
+                    onGrantClick = onRequestAllPermissions
+                )
+                PermissionStatusRow(
+                    title = "Phone State & Call Detection",
+                    granted = perms.phoneStateGranted,
+                    onGrantClick = onRequestAllPermissions
+                )
+                PermissionStatusRow(
+                    title = "Contacts (Caller Name Lookup)",
+                    granted = perms.contactsGranted,
+                    onGrantClick = onRequestAllPermissions
+                )
+                PermissionStatusRow(
+                    title = "Foreground Service Notifications",
+                    granted = perms.notificationsGranted,
+                    onGrantClick = onRequestAllPermissions
+                )
+                PermissionStatusRow(
+                    title = "Unrestricted Battery (Screen-Off)",
+                    granted = perms.batteryUnrestricted,
+                    onGrantClick = onRequestBatteryExemption
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+    }
+}
+
+@Composable
+private fun PermissionStatusRow(
+    title: String,
+    granted: Boolean,
+    onGrantClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+            Icon(
+                imageVector = if (granted) Icons.Rounded.CheckCircle else Icons.Rounded.Warning,
+                contentDescription = null,
+                tint = if (granted) Color(0xFF34D399) else Color(0xFFF59E0B),
+                modifier = Modifier.size(17.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(text = title, color = TextPrimary, fontSize = 12.sp)
+        }
+
+        if (granted) {
+            Text("ACTIVE", color = Color(0xFF34D399), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+        } else {
+            GlassCard(
+                shape = RoundedCornerShape(10.dp),
+                accentBorder = NeonCyan,
+                modifier = Modifier.clickable { onGrantClick() }
+            ) {
+                Text(
+                    text = "ALLOW",
+                    color = NeonCyan,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun ToolsTab(
     uiState: SuzyUiState,
     transcripts: List<SavedTranscript>,
     updateStatus: String,
     onToggleFlashlight: () -> Unit,
-    onOpenApp: (String) -> Unit,
+    onTestServerPing: () -> Unit,
+    onStartTimer: (Int) -> Unit,
+    onCancelTimer: () -> Unit,
     onClearTranscripts: () -> Unit,
     onCheckUpdate: () -> Unit,
     onOpenSettings: () -> Unit
@@ -1094,13 +1394,13 @@ private fun ToolsTab(
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // Section 1: Telemetry & Hardware Controls
+        // Header + Battery Badge
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("CONTROL CENTER", color = NeonCyan, fontSize = 15.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
+            Text("JARVIS TOOLS & TELEMETRY", color = NeonCyan, fontSize = 15.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.4.sp)
 
             GlassCard(shape = RoundedCornerShape(50), accentBorder = NeonCyan) {
                 Row(
@@ -1135,8 +1435,9 @@ private fun ToolsTab(
             }
         }
 
-        Text("SECTION 1 • DEVICE & AI CONTROLS", color = TextSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        // Section 1: Hardware & Network Radar (App Launcher completely removed)
+        Text("SECTION 1 • HARDWARE & SERVER RADAR", color = TextSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             GlassCard(
                 shape = RoundedCornerShape(16.dp),
                 accentBorder = if (uiState.isFlashlightOn) NeonCyan else null,
@@ -1145,22 +1446,51 @@ private fun ToolsTab(
                     .height(58.dp)
                     .clickable { onToggleFlashlight() }
             ) {
-                Row(
+                Column(
                     modifier = Modifier.fillMaxSize(),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
                 ) {
                     Icon(
                         imageVector = if (uiState.isFlashlightOn) Icons.Rounded.FlashlightOn else Icons.Rounded.FlashlightOff,
                         contentDescription = "Flashlight",
-                        tint = if (uiState.isFlashlightOn) NeonCyan else TextPrimary
+                        tint = if (uiState.isFlashlightOn) NeonCyan else TextPrimary,
+                        modifier = Modifier.size(18.dp)
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.height(3.dp))
                     Text(
                         text = if (uiState.isFlashlightOn) "FLASH ON" else "FLASH OFF",
                         color = TextPrimary,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 13.sp
+                        fontSize = 11.sp
+                    )
+                }
+            }
+
+            GlassCard(
+                shape = RoundedCornerShape(16.dp),
+                accentBorder = NeonCyan,
+                modifier = Modifier
+                    .weight(1f)
+                    .height(58.dp)
+                    .clickable { onTestServerPing() }
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxSize(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Icon(Icons.Rounded.Speed, contentDescription = "Ping", tint = NeonCyan, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.height(3.dp))
+                    Text(
+                        text = when {
+                            uiState.isPinging -> "PINGING..."
+                            uiState.pingMs != null -> "${uiState.pingMs} ms"
+                            else -> "PING TEST"
+                        },
+                        color = TextPrimary,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 11.sp
                     )
                 }
             }
@@ -1173,58 +1503,62 @@ private fun ToolsTab(
                     .height(58.dp)
                     .clickable { onOpenSettings() }
             ) {
-                Row(
+                Column(
                     modifier = Modifier.fillMaxSize(),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
                 ) {
-                    Icon(Icons.Rounded.Settings, contentDescription = "Settings", tint = NeonPurple)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("AI CONFIG", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    Icon(Icons.Rounded.Settings, contentDescription = "Settings", tint = NeonPurple, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.height(3.dp))
+                    Text("AI CONFIG", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 11.sp)
                 }
             }
         }
 
-        // Section 2: Quick App Launcher
-        Text("SECTION 2 • QUICK APP LAUNCHER", color = TextSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf("YouTube", "WhatsApp", "Chrome").forEach { app ->
-                GlassCard(
-                    shape = RoundedCornerShape(14.dp),
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(46.dp)
-                        .clickable { onOpenApp(app) }
+        // Section 2: Voice-Announced Countdown Timer
+        Text("SECTION 2 • VOICE COUNTDOWN TIMER", color = TextSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+        GlassCard(shape = RoundedCornerShape(18.dp), accentBorder = if (uiState.isTimerRunning) NeonPink else NeonPurple, modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxSize(),
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(Icons.Rounded.Launch, contentDescription = null, tint = NeonCyan, modifier = Modifier.size(13.dp))
-                        Spacer(modifier = Modifier.width(5.dp))
-                        Text(app, color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Rounded.Timer, contentDescription = null, tint = NeonPink, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = if (uiState.isTimerRunning) formatDuration(uiState.timerRemainingSec) else "Quick Focus / Nap Timer",
+                            color = TextPrimary,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    if (uiState.isTimerRunning) {
+                        Text(
+                            text = "CANCEL",
+                            color = Color(0xFFEF4444),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.clickable { onCancelTimer() }
+                        )
                     }
                 }
-            }
-        }
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf("Instagram", "Telegram", "Settings").forEach { app ->
-                GlassCard(
-                    shape = RoundedCornerShape(14.dp),
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(46.dp)
-                        .clickable { onOpenApp(app) }
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxSize(),
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(Icons.Rounded.Launch, contentDescription = null, tint = NeonPurple, modifier = Modifier.size(13.dp))
-                        Spacer(modifier = Modifier.width(5.dp))
-                        Text(app, color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(1, 5, 15, 30).forEach { mins ->
+                        GlassCard(
+                            shape = RoundedCornerShape(12.dp),
+                            accentBorder = NeonCyan,
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(40.dp)
+                                .clickable { onStartTimer(mins) }
+                        ) {
+                            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Text("${mins}m", color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
                     }
                 }
             }

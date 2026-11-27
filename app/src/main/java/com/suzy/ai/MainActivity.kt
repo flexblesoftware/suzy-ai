@@ -1,19 +1,13 @@
 package com.suzy.ai
 
 import android.Manifest
-import android.annotation.SuppressLint
-import android.content.Context
-import android.content.Intent
 import android.content.pm.PackageManager
-import android.net.Uri
-import android.os.Build
 import android.os.Bundle
-import android.os.PowerManager
-import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -22,31 +16,19 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.suzy.ai.ui.components.UpdateDialog
 import com.suzy.ai.ui.screens.HomeScreen
 import com.suzy.ai.ui.screens.SettingsScreen
 import com.suzy.ai.ui.theme.SuzyTheme
 import com.suzy.ai.update.UpdateManager
+import com.suzy.ai.util.PermissionHelper
 import com.suzy.ai.viewmodel.SuzyViewModel
 
 class MainActivity : ComponentActivity() {
-
-    @SuppressLint("BatteryLife")
-    private fun ensureBatteryExemption() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            try {
-                val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
-                if (!pm.isIgnoringBatteryOptimizations(packageName)) {
-                    val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
-                        data = Uri.parse("package:$packageName")
-                    }
-                    startActivity(intent)
-                }
-            } catch (_: Exception) {
-            }
-        }
-    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -64,30 +46,46 @@ class MainActivity : ComponentActivity() {
                 val updateManager = remember { UpdateManager(applicationContext, scope) }
                 val updateState by updateManager.state.collectAsState()
 
-                val notifLauncher = rememberLauncherForActivityResult(
-                    contract = ActivityResultContracts.RequestPermission()
-                ) { }
-
-                LaunchedEffect(Unit) {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                        if (ContextCompat.checkSelfPermission(
-                                this@MainActivity,
-                                Manifest.permission.POST_NOTIFICATIONS
-                            ) != PackageManager.PERMISSION_GRANTED
-                        ) {
-                            notifLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                val lifecycleOwner = LocalLifecycleOwner.current
+                DisposableEffect(lifecycleOwner) {
+                    val observer = LifecycleEventObserver { _, event ->
+                        if (event == Lifecycle.Event.ON_RESUME) {
+                            vm.refreshGuardAndPermissions()
+                            vm.refreshDeviceTelemetry()
                         }
                     }
+                    lifecycleOwner.lifecycle.addObserver(observer)
+                    onDispose {
+                        lifecycleOwner.lifecycle.removeObserver(observer)
+                    }
+                }
+
+                val multiPermissionLauncher = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.RequestMultiplePermissions()
+                ) {
+                    vm.refreshGuardAndPermissions()
+                    if (settings.backgroundGuardEnabled) {
+                        vm.syncBackgroundGuard(true)
+                    }
+                }
+
+                val startCallMicLauncher = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.RequestPermission()
+                ) { granted ->
+                    vm.refreshGuardAndPermissions()
+                    if (granted) {
+                        PermissionHelper.requestIgnoreBatteryOptimizations(this@MainActivity)
+                        vm.startSession()
+                    }
+                }
+
+                LaunchedEffect(Unit) {
+                    multiPermissionLauncher.launch(PermissionHelper.requiredRuntimePermissions())
                     updateManager.checkForUpdate(silent = true)
                 }
 
-                val permissionLauncher = rememberLauncherForActivityResult(
-                    contract = ActivityResultContracts.RequestPermission()
-                ) { granted ->
-                    if (granted) {
-                        ensureBatteryExemption()
-                        vm.startSession()
-                    }
+                LaunchedEffect(settings.backgroundGuardEnabled) {
+                    vm.syncBackgroundGuard(settings.backgroundGuardEnabled)
                 }
 
                 UpdateDialog(
@@ -117,10 +115,10 @@ class MainActivity : ComponentActivity() {
                                 Manifest.permission.RECORD_AUDIO
                             ) == PackageManager.PERMISSION_GRANTED
                             if (hasMic) {
-                                ensureBatteryExemption()
+                                PermissionHelper.requestIgnoreBatteryOptimizations(this@MainActivity)
                                 vm.startSession()
                             } else {
-                                permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                                startCallMicLauncher.launch(Manifest.permission.RECORD_AUDIO)
                             }
                         },
                         onStopClick = { vm.stopSession() },
@@ -136,8 +134,23 @@ class MainActivity : ComponentActivity() {
                         onSelectVoice = { vm.selectVoice(it) },
                         onAddMemory = { cat, text -> vm.addMemory(cat, text) },
                         onDeleteMemory = { vm.deleteMemory(it) },
+                        onToggleCallAnnouncer = { vm.toggleCallAnnouncer(it) },
+                        onToggleAnnounceCallerName = { vm.toggleAnnounceCallerName(it) },
+                        onSetAnnouncerRepeat = { vm.setAnnouncerRepeat(it) },
+                        onSetAnnouncerStyle = { vm.setAnnouncerStyle(it) },
+                        onToggleBackgroundGuard = { vm.toggleBackgroundGuard(it) },
+                        onTestCallAnnouncement = { vm.triggerTestCallAnnouncement() },
+                        onRequestAllPermissions = {
+                            multiPermissionLauncher.launch(PermissionHelper.requiredRuntimePermissions())
+                        },
+                        onRequestBatteryExemption = {
+                            PermissionHelper.requestIgnoreBatteryOptimizations(this@MainActivity)
+                        },
+                        onRefreshGuardAndPermissions = { vm.refreshGuardAndPermissions() },
                         onToggleFlashlight = { vm.toggleFlashlightManual() },
-                        onOpenApp = { vm.openAppManual(it) },
+                        onTestServerPing = { vm.testServerPing() },
+                        onStartTimer = { vm.startCountdownTimer(it) },
+                        onCancelTimer = { vm.cancelCountdownTimer() },
                         onRefreshTelemetry = { vm.refreshDeviceTelemetry() },
                         onCheckUpdate = { updateManager.checkForUpdate(silent = false) },
                         onClearTranscripts = { vm.clearTranscripts() },

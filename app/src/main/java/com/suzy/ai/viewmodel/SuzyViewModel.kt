@@ -12,8 +12,13 @@ import com.suzy.ai.data.SettingsRepository
 import com.suzy.ai.data.SuzyCatalog
 import com.suzy.ai.data.SuzySettings
 import com.suzy.ai.network.GeminiLiveClient
+import com.suzy.ai.service.AnnouncedCallRecord
+import com.suzy.ai.service.AnnouncerStateBridge
+import com.suzy.ai.service.CallAnnouncerService
 import com.suzy.ai.service.CallServiceBridge
 import com.suzy.ai.tools.SuzyTools
+import com.suzy.ai.util.AppPermissionsStatus
+import com.suzy.ai.util.PermissionHelper
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -50,6 +55,13 @@ data class SuzyUiState(
     val callDurationSec: Long = 0L,
     val batteryPercent: Int = 0,
     val isCharging: Boolean = false,
+    val pingMs: Int? = null,
+    val isPinging: Boolean = false,
+    val timerRemainingSec: Long = 0L,
+    val isTimerRunning: Boolean = false,
+    val isGuardRunning: Boolean = false,
+    val lastAnnouncedCall: AnnouncedCallRecord? = null,
+    val permissions: AppPermissionsStatus = AppPermissionsStatus(),
     val toolFeedback: String = ""
 )
 
@@ -94,13 +106,45 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
     private var liveClient: GeminiLiveClient? = null
 
     private var timerJob: Job? = null
+    private var countdownJob: Job? = null
     private var sessionStartMillis: Long = 0L
     private val sessionTurnLines = mutableListOf<String>()
 
     init {
         CallServiceBridge.onToggleMuteRequested = { toggleMute() }
         CallServiceBridge.onStopCallRequested = { stopSession() }
+        AnnouncerStateBridge.onPhoneCallIncomingDuringLiveSession = { caller ->
+            if (isSessionActive() && !_uiState.value.isMuted) {
+                toggleMute()
+                _uiState.update { it.copy(statusText = "Incoming phone call: $caller (Mic paused)") }
+            }
+            refreshGuardAndPermissions()
+        }
         refreshDeviceTelemetry()
+        refreshGuardAndPermissions()
+    }
+
+    fun refreshGuardAndPermissions() {
+        val perms = PermissionHelper.checkAll(appContext)
+        _uiState.update {
+            it.copy(
+                permissions = perms,
+                isGuardRunning = AnnouncerStateBridge.isGuardRunning,
+                lastAnnouncedCall = AnnouncerStateBridge.lastAnnouncement
+            )
+        }
+    }
+
+    fun syncBackgroundGuard(enabled: Boolean) {
+        if (enabled) {
+            CallAnnouncerService.startGuard(appContext)
+        } else {
+            CallAnnouncerService.stopGuard(appContext)
+        }
+        viewModelScope.launch {
+            delay(250L)
+            refreshGuardAndPermissions()
+        }
     }
 
     fun refreshDeviceTelemetry() {
@@ -112,6 +156,53 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
                 isFlashlightOn = suzyTools.isTorchOn
             )
         }
+    }
+
+    fun testServerPing() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isPinging = true) }
+            val ms = suzyTools.measureGeminiPingMs()
+            _uiState.update {
+                it.copy(
+                    isPinging = false,
+                    pingMs = if (ms > 0) ms else null,
+                    toolFeedback = if (ms > 0) "Gemini Live Server Ping: ${ms}ms (Ultra-Fast)" else "Ping timeout — internet check karein"
+                )
+            }
+        }
+    }
+
+    fun startCountdownTimer(minutes: Int) {
+        countdownJob?.cancel()
+        val total = (minutes * 60L).coerceAtLeast(10L)
+        _uiState.update { it.copy(timerRemainingSec = total, isTimerRunning = true) }
+        countdownJob = viewModelScope.launch {
+            var rem = total
+            while (isActive && rem > 0L) {
+                delay(1000L)
+                rem--
+                _uiState.update { it.copy(timerRemainingSec = rem) }
+            }
+            if (rem == 0L) {
+                _uiState.update {
+                    it.copy(
+                        isTimerRunning = false,
+                        toolFeedback = "$minutes min timer complete!"
+                    )
+                }
+                audioEngine.playUiChime(true)
+                CallAnnouncerService.speakCustomMessage(
+                    appContext,
+                    "Suno jaan, tumhara $minutes minute ka timer poora ho gaya hai!"
+                )
+            }
+        }
+    }
+
+    fun cancelCountdownTimer() {
+        countdownJob?.cancel()
+        countdownJob = null
+        _uiState.update { it.copy(timerRemainingSec = 0L, isTimerRunning = false) }
     }
 
     private fun startCallTimer() {
@@ -427,6 +518,51 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun toggleCallAnnouncer(enabled: Boolean) {
+        val updated = settings.value.copy(callAnnouncerEnabled = enabled)
+        viewModelScope.launch {
+            repo.saveSettings(updated)
+            if (enabled) syncBackgroundGuard(true)
+        }
+    }
+
+    fun toggleAnnounceCallerName(enabled: Boolean) {
+        val updated = settings.value.copy(announceCallerName = enabled)
+        viewModelScope.launch {
+            repo.saveSettings(updated)
+        }
+    }
+
+    fun setAnnouncerRepeat(count: Int) {
+        val updated = settings.value.copy(announcerRepeatCount = count.coerceIn(1, 3))
+        viewModelScope.launch {
+            repo.saveSettings(updated)
+        }
+    }
+
+    fun setAnnouncerStyle(style: String) {
+        val updated = settings.value.copy(announcerStyle = style)
+        viewModelScope.launch {
+            repo.saveSettings(updated)
+        }
+    }
+
+    fun toggleBackgroundGuard(enabled: Boolean) {
+        val updated = settings.value.copy(backgroundGuardEnabled = enabled)
+        viewModelScope.launch {
+            repo.saveSettings(updated)
+            syncBackgroundGuard(enabled)
+        }
+    }
+
+    fun triggerTestCallAnnouncement() {
+        CallAnnouncerService.triggerTestAnnouncement(appContext)
+        viewModelScope.launch {
+            delay(400L)
+            refreshGuardAndPermissions()
+        }
+    }
+
     fun addMemory(category: String, content: String) {
         viewModelScope.launch {
             repo.addMemory(category, content)
@@ -473,11 +609,6 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.update { it.copy(isFlashlightOn = suzyTools.isTorchOn, toolFeedback = res) }
     }
 
-    fun openAppManual(appName: String) {
-        val res = suzyTools.openApp(appName)
-        _uiState.update { it.copy(toolFeedback = res) }
-    }
-
     fun sendQuickReaction(prompt: String) {
         audioEngine.flushPlayback()
         liveClient?.sendReactionPrompt(prompt)
@@ -494,6 +625,7 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
         )
         viewModelScope.launch {
             repo.saveSettings(resolved)
+            syncBackgroundGuard(resolved.backgroundGuardEnabled)
             hotReloadIfActive(resolved)
         }
     }
@@ -502,6 +634,7 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
         super.onCleared()
         CallServiceBridge.onToggleMuteRequested = null
         CallServiceBridge.onStopCallRequested = null
+        AnnouncerStateBridge.onPhoneCallIncomingDuringLiveSession = null
         stopSession()
     }
 }

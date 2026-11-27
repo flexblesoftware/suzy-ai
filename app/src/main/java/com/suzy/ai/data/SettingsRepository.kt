@@ -7,6 +7,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
@@ -45,7 +46,12 @@ data class SuzySettings(
     val systemPrompt: String = DEFAULT_SUZY_PROMPT,
     val bargeInEnabled: Boolean = true,
     val captionsEnabled: Boolean = true,
-    val temperature: Float = 0.95f
+    val temperature: Float = 0.95f,
+    val callAnnouncerEnabled: Boolean = true,
+    val announceCallerName: Boolean = true,
+    val announcerRepeatCount: Int = 2,
+    val announcerStyle: String = "Girlfriend",
+    val backgroundGuardEnabled: Boolean = true
 ) {
     companion object {
         val DEFAULT_SUZY_PROMPT = SuzyCatalog.personas.first().systemPrompt
@@ -64,6 +70,11 @@ class SettingsRepository(private val context: Context) {
         val BARGE_IN = booleanPreferencesKey("barge_in")
         val CAPTIONS_ENABLED = booleanPreferencesKey("captions_enabled")
         val TEMPERATURE = floatPreferencesKey("temperature")
+        val CALL_ANNOUNCER_ENABLED = booleanPreferencesKey("call_announcer_enabled")
+        val ANNOUNCE_CALLER_NAME = booleanPreferencesKey("announce_caller_name")
+        val ANNOUNCER_REPEAT = intPreferencesKey("announcer_repeat_count")
+        val ANNOUNCER_STYLE = stringPreferencesKey("announcer_style")
+        val BACKGROUND_GUARD = booleanPreferencesKey("background_guard_enabled")
         val MEMORIES_JSON = stringPreferencesKey("memory_vault_v1")
         val CUSTOM_PERSONAS_JSON = stringPreferencesKey("custom_personas_v1")
         val TRANSCRIPTS_JSON = stringPreferencesKey("saved_transcripts_v1")
@@ -84,7 +95,12 @@ class SettingsRepository(private val context: Context) {
             systemPrompt = resolvedPrompt,
             bargeInEnabled = prefs[Keys.BARGE_IN] ?: true,
             captionsEnabled = prefs[Keys.CAPTIONS_ENABLED] ?: true,
-            temperature = prefs[Keys.TEMPERATURE] ?: 0.95f
+            temperature = prefs[Keys.TEMPERATURE] ?: 0.95f,
+            callAnnouncerEnabled = prefs[Keys.CALL_ANNOUNCER_ENABLED] ?: true,
+            announceCallerName = prefs[Keys.ANNOUNCE_CALLER_NAME] ?: true,
+            announcerRepeatCount = prefs[Keys.ANNOUNCER_REPEAT] ?: 2,
+            announcerStyle = prefs[Keys.ANNOUNCER_STYLE] ?: "Girlfriend",
+            backgroundGuardEnabled = prefs[Keys.BACKGROUND_GUARD] ?: true
         )
     }
 
@@ -116,6 +132,11 @@ class SettingsRepository(private val context: Context) {
             prefs[Keys.BARGE_IN] = settings.bargeInEnabled
             prefs[Keys.CAPTIONS_ENABLED] = settings.captionsEnabled
             prefs[Keys.TEMPERATURE] = settings.temperature
+            prefs[Keys.CALL_ANNOUNCER_ENABLED] = settings.callAnnouncerEnabled
+            prefs[Keys.ANNOUNCE_CALLER_NAME] = settings.announceCallerName
+            prefs[Keys.ANNOUNCER_REPEAT] = settings.announcerRepeatCount.coerceIn(1, 3)
+            prefs[Keys.ANNOUNCER_STYLE] = settings.announcerStyle
+            prefs[Keys.BACKGROUND_GUARD] = settings.backgroundGuardEnabled
         }
     }
 

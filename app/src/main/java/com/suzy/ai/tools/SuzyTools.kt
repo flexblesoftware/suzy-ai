@@ -8,7 +8,11 @@ import android.hardware.camera2.CameraManager
 import android.media.AudioManager
 import android.net.Uri
 import android.os.BatteryManager
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import java.net.InetSocketAddress
+import java.net.Socket
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -49,6 +53,18 @@ class SuzyTools(private val context: Context) {
         return BatteryTelemetry(percent = pct, isCharging = charging)
     }
 
+    suspend fun measureGeminiPingMs(): Int = withContext(Dispatchers.IO) {
+        try {
+            val start = System.currentTimeMillis()
+            Socket().use { socket ->
+                socket.connect(InetSocketAddress("generativelanguage.googleapis.com", 443), 3000)
+            }
+            (System.currentTimeMillis() - start).toInt().coerceAtLeast(1)
+        } catch (_: Exception) {
+            -1
+        }
+    }
+
     fun getDeviceStatus(): String {
         val bat = getBatteryTelemetry()
         val now = SimpleDateFormat("hh:mm a, dd MMM yyyy", Locale.getDefault()).format(Date())
@@ -73,40 +89,6 @@ class SuzyTools(private val context: Context) {
         }
     }
 
-    fun openApp(appName: String): String {
-        val query = appName.lowercase(Locale.getDefault()).trim()
-        val knownPackages = mapOf(
-            "youtube" to "com.google.android.youtube",
-            "whatsapp" to "com.whatsapp",
-            "instagram" to "com.instagram.android",
-            "chrome" to "com.android.chrome",
-            "telegram" to "org.telegram.messenger",
-            "spotify" to "com.spotify.music",
-            "settings" to "com.android.settings"
-        )
-
-        val pm = context.packageManager
-        val directPkg = knownPackages.entries.firstOrNull { query.contains(it.key) }?.value
-
-        val launchIntent = if (directPkg != null) {
-            pm.getLaunchIntentForPackage(directPkg)
-        } else {
-            val installed = pm.getInstalledApplications(0)
-            val match = installed.firstOrNull { app ->
-                pm.getApplicationLabel(app).toString().lowercase(Locale.getDefault()).contains(query)
-            }
-            match?.let { pm.getLaunchIntentForPackage(it.packageName) }
-        }
-
-        return if (launchIntent != null) {
-            launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            context.startActivity(launchIntent)
-            "$appName open kar diya hai."
-        } else {
-            "$appName phone mein install nahi mila."
-        }
-    }
-
     fun webSearch(query: String): String {
         return try {
             val url = "https://www.google.com/search?q=${Uri.encode(query)}"
@@ -125,7 +107,6 @@ class SuzyTools(private val context: Context) {
             "toggle_flashlight" -> toggleFlashlight(args.optBoolean("enable", true))
             "get_device_status" -> getDeviceStatus()
             "set_volume" -> setVolume(args.optInt("level_percent", 70))
-            "open_app" -> openApp(args.optString("app_name", ""))
             "web_search" -> webSearch(args.optString("query", ""))
             else -> "Unknown tool: $name"
         }
