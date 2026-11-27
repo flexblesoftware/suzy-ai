@@ -44,6 +44,7 @@ class AudioEngine(
     companion object {
         const val INPUT_SAMPLE_RATE = 16000
         const val OUTPUT_SAMPLE_RATE = 24000
+        const val SILENCE_THRESHOLD = 0.015f
     }
 
     fun playUiChime(connected: Boolean) {
@@ -118,7 +119,10 @@ class AudioEngine(
         recorder.startRecording()
 
         recordJob = scope.launch(Dispatchers.IO) {
-            val buffer = ByteArray(1600)
+            val buffer = ByteArray(3200) // 100ms chunks = half WebSocket overhead, zero lag
+            val silenceChunk = ByteArray(3200)
+            var silenceStreak = 0
+
             while (isActive) {
                 val read = recorder.read(buffer, 0, buffer.size)
                 if (read > 0) {
@@ -127,8 +131,20 @@ class AudioEngine(
                         continue
                     }
                     val chunk = buffer.copyOf(read)
-                    onAmplitude(computeRms(chunk))
-                    onAudioChunk(chunk)
+                    val rms = computeRms(chunk)
+
+                    // Soft silence floor so Gemini detects end-of-speech instantly
+                    if (rms < SILENCE_THRESHOLD) {
+                        silenceStreak++
+                        onAmplitude(0f)
+                        if (silenceStreak <= 6) {
+                            onAudioChunk(silenceChunk)
+                        }
+                    } else {
+                        silenceStreak = 0
+                        onAmplitude(rms)
+                        onAudioChunk(chunk)
+                    }
                 }
             }
         }
@@ -142,7 +158,7 @@ class AudioEngine(
             OUTPUT_SAMPLE_RATE,
             AudioFormat.CHANNEL_OUT_MONO,
             AudioFormat.ENCODING_PCM_16BIT
-        ).coerceAtLeast(4800)
+        ).coerceAtLeast(2400)
 
         val track = AudioTrack.Builder()
             .setAudioAttributes(
@@ -158,7 +174,7 @@ class AudioEngine(
                     .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
                     .build()
             )
-            .setBufferSizeInBytes(minBuf * 2)
+            .setBufferSizeInBytes(minBuf)
             .setTransferMode(AudioTrack.MODE_STREAM)
             .build()
 
@@ -186,7 +202,7 @@ class AudioEngine(
     fun flushPlayback() {
         try {
             while (playbackChannel?.tryReceive()?.isSuccess == true) {
-                // Drain queued audio
+                // Drain queued audio immediately
             }
             audioTrack?.pause()
             audioTrack?.flush()

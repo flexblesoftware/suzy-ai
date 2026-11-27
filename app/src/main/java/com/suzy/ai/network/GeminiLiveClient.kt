@@ -24,7 +24,7 @@ class GeminiLiveClient(
 ) {
     private val client = OkHttpClient.Builder()
         .readTimeout(0, TimeUnit.MILLISECONDS)
-        .pingInterval(20, TimeUnit.SECONDS)
+        .pingInterval(15, TimeUnit.SECONDS)
         .build()
 
     private var webSocket: WebSocket? = null
@@ -88,6 +88,14 @@ class GeminiLiveClient(
                         })
                     })
                 })
+                put("realtimeInputConfig", JSONObject().apply {
+                    put("automaticActivityDetection", JSONObject().apply {
+                        put("startOfSpeechSensitivity", "START_SENSITIVITY_HIGH")
+                        put("endOfSpeechSensitivity", "END_SENSITIVITY_HIGH")
+                        put("prefixPaddingMs", 100)
+                        put("silenceDurationMs", 400)
+                    })
+                })
                 put("systemInstruction", JSONObject().apply {
                     put("parts", JSONArray().put(JSONObject().apply {
                         put("text", settings.systemPrompt)
@@ -100,6 +108,9 @@ class GeminiLiveClient(
 
     fun sendPcmAudio(pcmBytes: ByteArray) {
         val ws = webSocket ?: return
+        // Drop stale frames if network slows down so 1-2 min delay NEVER builds up
+        if (ws.queueSize() > 65536L) return
+
         val b64 = Base64.encodeToString(pcmBytes, Base64.NO_WRAP)
         val payload = JSONObject().apply {
             put("realtimeInput", JSONObject().apply {
