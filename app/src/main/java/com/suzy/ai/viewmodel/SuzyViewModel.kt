@@ -64,7 +64,7 @@ enum class SuzyState {
 
 data class SuzyUiState(
     val state: SuzyState = SuzyState.IDLE,
-    val statusText: String = "Say "Hey Suzy" or Tap Start Call",
+    val statusText: String = "Say \"Hey Suzy\" or Tap Start Call",
     val liveCaption: String = "",
     val lastCaption: String = "",
     val amplitude: Float = 0f,
@@ -419,8 +419,7 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application), S
                 systemInstruction = enriched.systemPrompt,
                 history = chatMessages.value,
                 userMessage = if (executedSummary.isNotBlank()) {
-                    "$cleanText
-[SYSTEM NOTE: App already executed: $executedSummary. Confirm naturally in your persona style.]"
+                    "$cleanText\n[SYSTEM NOTE: App already executed: $executedSummary. Confirm naturally in your persona style.]"
                 } else cleanText,
                 imageBase64 = imageBase64
             )
@@ -457,7 +456,7 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application), S
             context = appContext,
             category = "GEMINI VOICE",
             title = personaName,
-            prompt = "Tum $personaName ho. Yeh message apne natural Hinglish persona andaaz mein padh kar sunao: "$textToSpeak""
+            prompt = "Tum $personaName ho. Yeh message apne natural Hinglish persona andaaz mein padh kar sunao: \"$textToSpeak\""
         )
     }
 
@@ -622,34 +621,23 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application), S
         val savedMemories = if (base.guestModeActive) emptyList() else memories.value
 
         val promptBuilder = StringBuilder(hardcodedBasePrompt.trim())
-        promptBuilder.append("
-
-[OWNER & APP SELF-AWARENESS]:")
-        promptBuilder.append("
-- Owner Name: ${base.ownerName} (Title: ${base.ownerNickname})")
-        promptBuilder.append("
-- Current Persona: ${base.activePersonaName} | Voice: ${base.voiceName} | ORB Style: ${base.orbStyle} | Theme: ${base.uiThemeSkin}")
-        promptBuilder.append("
-- Bond XP: ${base.bondXp} | Streak: ${base.streakDays} days | Trust Score: ${base.trustScore}/100 | Narazgi/Anger Level: ${base.angerLevel}%")
+        promptBuilder.append("\n\n[OWNER & APP SELF-AWARENESS]:")
+        promptBuilder.append("\n- Owner Name: ${base.ownerName} (Title: ${base.ownerNickname})")
+        promptBuilder.append("\n- Current Persona: ${base.activePersonaName} | Voice: ${base.voiceName} | ORB Style: ${base.orbStyle} | Theme: ${base.uiThemeSkin}")
+        promptBuilder.append("\n- Bond XP: ${base.bondXp} | Streak: ${base.streakDays} days | Trust Score: ${base.trustScore}/100 | Narazgi/Anger Level: ${base.angerLevel}%")
         if (base.angerLevel >= 40) {
-            promptBuilder.append("
-- [ATTITUDE ALERT]: Tum abhi user se ${base.angerLevel}% naraz ho. Chhote, teekhe jawab do jab tak user sorry bol kar mana na le (kabhi gaali mat dena).")
+            promptBuilder.append("\n- [ATTITUDE ALERT]: Tum abhi user se ${base.angerLevel}% naraz ho. Chhote, teekhe jawab do jab tak user sorry bol kar mana na le (kabhi gaali mat dena).")
         }
         if (base.customNote.isNotBlank()) {
-            promptBuilder.append("
-- [OWNER PERSONAL INSTRUCTION]: ${base.customNote.trim()}")
+            promptBuilder.append("\n- [OWNER PERSONAL INSTRUCTION]: ${base.customNote.trim()}")
         }
         if (mood != null) {
-            promptBuilder.append("
-- [CURRENT LIVE MOOD - ${mood.label}]: ${mood.instruction}")
+            promptBuilder.append("\n- [CURRENT LIVE MOOD - ${mood.label}]: ${mood.instruction}")
         }
         if (savedMemories.isNotEmpty()) {
-            promptBuilder.append("
-
-[PERMANENT MEMORY VAULT - Hamesha yaad rakho aur naturally baat mein use karo]:")
+            promptBuilder.append("\n\n[PERMANENT MEMORY VAULT - Hamesha yaad rakho aur naturally baat mein use karo]:")
             savedMemories.take(30).forEach { mem ->
-                promptBuilder.append("
-- (${mem.category}) ${mem.content}")
+                promptBuilder.append("\n- (${mem.category}) ${mem.content}")
             }
         }
         return base.copy(systemPrompt = promptBuilder.toString())
@@ -674,8 +662,7 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application), S
             personaName = personaName,
             dateTime = dateStr,
             durationLabel = durationStr,
-            dialogue = linesSnapshot.joinToString("
-")
+            dialogue = linesSnapshot.joinToString("\n")
         )
         viewModelScope.launch {
             repo.saveTranscript(item)
@@ -814,7 +801,7 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application), S
                     if (cur.state != SuzyState.ERROR) {
                         cur.copy(
                             state = SuzyState.IDLE,
-                            statusText = "Say "${settings.value.customWakePhrase}" or Tap Start Call",
+                            statusText = "Say \"${settings.value.customWakePhrase}\" or Tap Start Call",
                             amplitude = 0f
                         )
                     } else cur
@@ -875,7 +862,7 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application), S
 
     fun stopSession() {
         stopSessionInternal(
-            statusOverride = "Say "${settings.value.customWakePhrase}" or Tap Start Call"
+            statusOverride = "Say \"${settings.value.customWakePhrase}\" or Tap Start Call"
         )
     }
 

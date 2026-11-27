@@ -940,8 +940,7 @@ private fun MemoryTab(
             }
         } else if (filtered.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("Abhi Memory Vault khaali hai.
-Upar apni pasand ya baatein add karein!", color = TextSecondary, fontSize = 13.sp, textAlign = TextAlign.Center)
+                Text("Abhi Memory Vault khaali hai.\nUpar apni pasand ya baatein add karein!", color = TextSecondary, fontSize = 13.sp, textAlign = TextAlign.Center)
             }
         } else {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.weight(1f)) {

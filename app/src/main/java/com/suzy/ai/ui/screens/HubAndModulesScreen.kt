@@ -437,7 +437,7 @@ fun HubAndModulesScreen(
                     GlassCard(accentBorder = Color(0xFF34D399), modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
-                                Text("Hands-Free Wake Word ("${settings.customWakePhrase}")", color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                Text("Hands-Free Wake Word (\"${settings.customWakePhrase}\")", color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                                 Switch(checked = settings.wakeWordEnabled, onCheckedChange = onToggleWakeWord)
                             }
                             Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
@@ -667,7 +667,7 @@ fun HubAndModulesScreen(
                     rules.forEach { r ->
                         GlassCard(modifier = Modifier.fillMaxWidth().clickable { onRunCommand(r.triggerPhrase) }) {
                             Column(modifier = Modifier.padding(12.dp)) {
-                                Text("${r.kind} • "${r.triggerPhrase}"", color = NeonCyan, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                Text("${r.kind} • \"${r.triggerPhrase}\"", color = NeonCyan, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                 Text(r.actionSummary, color = TextSecondary, fontSize = 11.sp)
                             }
                         }

@@ -241,10 +241,7 @@ fun ChatScreen(
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "Koi bhi sawaal poochho, photo attach karo, ya seedha command likho jaise:
-• "Vikram South Hero persona lagao"
-• "Brightness 40% karo aur 15 min timer lagao"
-• "Rahul ke 500 rupaye udhaar mein likho"",
+                            text = "Koi bhi sawaal poochho, photo attach karo, ya seedha command likho jaise:\n• \"Vikram South Hero persona lagao\"\n• \"Brightness 40% karo aur 15 min timer lagao\"\n• \"Rahul ke 500 rupaye udhaar mein likho\"",
                             color = TextSecondary,
                             fontSize = 12.sp,
                             lineHeight = 17.sp

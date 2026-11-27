@@ -47,7 +47,7 @@ object OmniCommandRouter {
         if (text.isBlank()) return CommandExecutionOutcome(false, "")
 
         // Split chained commands on " aur ", " and ", " then ", or ","
-        val segments = text.split(Regex("\s+(?:aur|and|then)\s+|,", RegexOption.IGNORE_CASE))
+        val segments = text.split(Regex("\\s+(?:aur|and|then)\\s+|,", RegexOption.IGNORE_CASE))
             .map { it.trim() }
             .filter { it.isNotBlank() }
 
@@ -252,7 +252,7 @@ object OmniCommandRouter {
         // 6. System Hardware & Android Settings Modification (20, 26, 27)
         if (lower.contains("brightness")) {
             checkOwnerPermission("Modify System Brightness")?.let { return it }
-            val num = Regex("\d+").find(lower)?.value?.toIntOrNull()?.coerceIn(5, 100) ?: 60
+            val num = Regex("\\d+").find(lower)?.value?.toIntOrNull()?.coerceIn(5, 100) ?: 60
             applySystemBrightness(context, num)
             return CommandExecutionOutcome(true, "System Brightness set to $num%")
         }
@@ -290,7 +290,7 @@ object OmniCommandRouter {
 
         // 8. Timer & Focus Pomodoro (13)
         if (lower.contains("timer") || lower.contains("focus")) {
-            val mins = Regex("\d+").find(lower)?.value?.toIntOrNull()?.coerceIn(1, 180) ?: 25
+            val mins = Regex("\\d+").find(lower)?.value?.toIntOrNull()?.coerceIn(1, 180) ?: 25
             return CommandExecutionOutcome(true, "Started ${mins}m Focus Timer", startTimerMinutes = mins)
         }
 
@@ -310,7 +310,7 @@ object OmniCommandRouter {
             }
         }
         if (lower.contains("udhaar") || lower.contains("rupaye") || lower.contains("kharcha")) {
-            val amt = Regex("\d+").find(lower)?.value?.toDoubleOrNull() ?: 0.0
+            val amt = Regex("\\d+").find(lower)?.value?.toDoubleOrNull() ?: 0.0
             if (amt > 0.0) {
                 val kind = if (lower.contains("udhaar")) "UDHAAR_LENA" else "EXPENSE"
                 return CommandExecutionOutcome(true, "Logged ₹${amt.toInt()} in $kind", addFinanceEntry = Triple(kind, segment, amt))
