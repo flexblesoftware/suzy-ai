@@ -9,55 +9,53 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.unit.dp
+import com.suzy.ai.data.SuzyCatalog
 import com.suzy.ai.ui.theme.NeonCyan
-import com.suzy.ai.ui.theme.NeonPink
 import com.suzy.ai.ui.theme.NeonPurple
 
+object ActiveUiStyleHolder {
+    var skinId: String = "cyberpunk"
+    var cornerRadiusDp: Int = 20
+    var backdropPreset: String = "starfield"
+}
+
 @Composable
-fun GlassBackground(content: @Composable BoxScope.() -> Unit) {
+fun GlassBackground(
+    modifier: Modifier = Modifier,
+    content: @Composable BoxScope.() -> Unit
+) {
+    val skin = SuzyCatalog.uiThemeSkins.firstOrNull { it.id == ActiveUiStyleHolder.skinId }
+        ?: SuzyCatalog.uiThemeSkins.first()
+
     Box(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxSize()
             .background(
                 Brush.verticalGradient(
-                    colors = listOf(Color(0xFF070812), Color(0xFF0B0D1D), Color(0xFF070611))
+                    colors = listOf(skin.bgTop, skin.bgBottom, skin.bgTop)
                 )
             )
     ) {
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colors = listOf(NeonPurple.copy(alpha = 0.22f), Color.Transparent),
-                    center = Offset(size.width * 0.15f, size.height * 0.14f),
-                    radius = size.width * 0.65f
-                ),
-                center = Offset(size.width * 0.15f, size.height * 0.14f),
-                radius = size.width * 0.65f
-            )
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colors = listOf(NeonCyan.copy(alpha = 0.16f), Color.Transparent),
-                    center = Offset(size.width * 0.88f, size.height * 0.35f),
-                    radius = size.width * 0.6f
-                ),
-                center = Offset(size.width * 0.88f, size.height * 0.35f),
-                radius = size.width * 0.6f
-            )
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colors = listOf(NeonPink.copy(alpha = 0.14f), Color.Transparent),
-                    center = Offset(size.width * 0.5f, size.height * 0.88f),
-                    radius = size.width * 0.7f
-                ),
-                center = Offset(size.width * 0.5f, size.height * 0.88f),
-                radius = size.width * 0.7f
-            )
+        if (ActiveUiStyleHolder.backdropPreset != "amoled" && skin.id != "amoled") {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val w = size.width
+                val h = size.height
+                drawCircle(
+                    color = skin.primary.copy(alpha = 0.08f),
+                    radius = w * 0.45f,
+                    center = Offset(w * 0.2f, h * 0.25f)
+                )
+                drawCircle(
+                    color = skin.secondary.copy(alpha = 0.07f),
+                    radius = w * 0.4f,
+                    center = Offset(w * 0.85f, h * 0.72f)
+                )
+            }
         }
         content()
     }
@@ -66,30 +64,24 @@ fun GlassBackground(content: @Composable BoxScope.() -> Unit) {
 @Composable
 fun GlassCard(
     modifier: Modifier = Modifier,
-    shape: Shape = RoundedCornerShape(20.dp),
+    shape: Shape = RoundedCornerShape(ActiveUiStyleHolder.cornerRadiusDp.dp),
     accentBorder: Color? = null,
     content: @Composable BoxScope.() -> Unit
 ) {
+    val skin = SuzyCatalog.uiThemeSkins.firstOrNull { it.id == ActiveUiStyleHolder.skinId }
+        ?: SuzyCatalog.uiThemeSkins.first()
+
     val borderBrush = if (accentBorder != null) {
-        Brush.linearGradient(
-            colors = listOf(accentBorder.copy(alpha = 0.75f), accentBorder.copy(alpha = 0.18f))
-        )
+        Brush.linearGradient(listOf(accentBorder.copy(alpha = 0.78f), accentBorder.copy(alpha = 0.25f)))
     } else {
-        Brush.linearGradient(
-            colors = listOf(Color.White.copy(alpha = 0.22f), Color.White.copy(alpha = 0.04f))
-        )
+        Brush.linearGradient(listOf(skin.primary.copy(alpha = 0.26f), skin.secondary.copy(alpha = 0.14f)))
     }
 
     Box(
         modifier = modifier
-            .clip(shape)
             .background(
-                Brush.linearGradient(
-                    colors = listOf(
-                        Color.White.copy(alpha = 0.09f),
-                        Color.White.copy(alpha = 0.03f)
-                    )
-                )
+                color = Color(0xFF101326).copy(alpha = if (skin.id == "amoled") 0.88f else 0.72f),
+                shape = shape
             )
             .border(width = 1.dp, brush = borderBrush, shape = shape),
         content = content

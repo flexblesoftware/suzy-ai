@@ -44,7 +44,18 @@ class MainActivity : ComponentActivity() {
                 val memories by vm.memories.collectAsState()
                 val customPersonas by vm.customPersonas.collectAsState()
                 val transcripts by vm.transcripts.collectAsState()
+                val chatMessages by vm.chatMessages.collectAsState()
+                val tasks by vm.tasks.collectAsState()
+                val financeEntries by vm.financeEntries.collectAsState()
+                val habits by vm.habits.collectAsState()
+                val notes by vm.notes.collectAsState()
+                val rules by vm.rules.collectAsState()
+                val securityLogs by vm.securityLogs.collectAsState()
+                val parkingNote by vm.parkingNote.collectAsState()
+                val medicalId by vm.medicalId.collectAsState()
+
                 var showSettings by remember { mutableStateOf(false) }
+                var initialStudioSection by remember { mutableIntStateOf(0) }
 
                 val scope = rememberCoroutineScope()
                 val updateManager = remember { UpdateManager(applicationContext, scope) }
@@ -93,6 +104,7 @@ class MainActivity : ComponentActivity() {
                 if (showSettings) {
                     SettingsScreen(
                         current = settings,
+                        initialStudioSection = initialStudioSection,
                         onSave = { vm.updateSettings(it) },
                         onBack = { showSettings = false }
                     )
@@ -103,6 +115,15 @@ class MainActivity : ComponentActivity() {
                         memories = memories,
                         customPersonas = customPersonas,
                         transcripts = transcripts,
+                        chatMessages = chatMessages,
+                        tasks = tasks,
+                        financeEntries = financeEntries,
+                        habits = habits,
+                        notes = notes,
+                        rules = rules,
+                        securityLogs = securityLogs,
+                        parkingNote = parkingNote,
+                        medicalId = medicalId,
                         updateStatus = updateState.statusMessage,
                         onStartClick = {
                             val hasMic = ContextCompat.checkSelfPermission(
@@ -122,49 +143,49 @@ class MainActivity : ComponentActivity() {
                         onToggleCaptions = { vm.toggleCaptions() },
                         onSelectMood = { vm.selectMood(it) },
                         onSelectPersona = { vm.selectPersona(it) },
-                        onCreateCustomPersona = { name, role, voice, colorHex, prompt ->
-                            vm.createCustomPersona(name, role, voice, colorHex, prompt)
+                        onCreateCustomPersona = { name, role, voice, colorHex, prompt, gender ->
+                            vm.createCustomPersona(name, role, voice, colorHex, prompt, gender)
                         },
                         onDeleteCustomPersona = { vm.deleteCustomPersona(it) },
                         onSelectVoice = { vm.selectVoice(it) },
                         onAddMemory = { cat, text -> vm.addMemory(cat, text) },
                         onDeleteMemory = { vm.deleteMemory(it) },
+                        onTogglePinMemory = { vm.togglePinMemory(it) },
+                        onSendChatMessage = { msg, imgB64, lbl -> vm.sendChatMessage(msg, imgB64, lbl) },
+                        onSpeakInGeminiVoice = { vm.speakTextInGeminiVoice(it) },
+                        onClearChat = { vm.clearChatHistory() },
+                        onUpdateSettings = { vm.updateSettings(it) },
+                        onRunOmniCommand = { vm.executeOmniCommand(it, speakResponse = true) },
+                        onConsumeNavRoute = { vm.consumeNavigationRoute() },
+                        onAddTask = { vm.addPlannerTask(it) },
+                        onToggleTask = { vm.togglePlannerTask(it) },
+                        onAddFinance = { k, t, p, a -> vm.addFinanceEntry(k, t, p, a) },
+                        onToggleFinanceSettled = { vm.toggleFinanceSettled(it) },
+                        onToggleHabit = { vm.toggleHabit(it) },
+                        onAddHabit = { vm.addHabit(it) },
+                        onAddNote = { k, t, b -> vm.addNoteItem(k, t, b) },
+                        onToggleNote = { vm.toggleNoteChecked(it) },
+                        onAddRule = { k, tr, s, tg -> vm.addAutomationRule(k, tr, s, tg) },
+                        onSaveParking = { vm.saveParkingSpot(it) },
+                        onSaveMedical = { vm.saveMedicalId(it) },
                         onToggleWakeWord = { vm.toggleWakeWord(it) },
                         onToggleMediaShield = { vm.toggleMediaShield(it) },
                         onToggleCallPrivacyShield = { vm.toggleCallPrivacyShield(it) },
-                        onTestWakeWord = { vm.triggerTestWakeWord() },
                         onToggleCallAnnouncer = { vm.toggleCallAnnouncer(it) },
-                        onToggleAnnounceCallerName = { vm.toggleAnnounceCallerName(it) },
-                        onSetAnnouncerRepeat = { vm.setAnnouncerRepeat(it) },
-                        onSetAnnouncerStyle = { vm.setAnnouncerStyle(it) },
                         onToggleNotificationReader = { vm.toggleNotificationReader(it) },
-                        onToggleReadNotificationContent = { vm.toggleReadNotificationContent(it) },
-                        onToggleBlockSensitive = { vm.toggleBlockSensitiveNotifications(it) },
-                        onToggleHideOnLockScreen = { vm.toggleHideNotificationOnLockScreen(it) },
-                        onToggleTrustedAppsOnly = { vm.toggleTrustedAppsOnly(it) },
-                        onToggleBackgroundGuard = { vm.toggleBackgroundGuard(it) },
                         onTestCallAnnouncement = { vm.triggerTestCallAnnouncement() },
                         onTestNotificationAnnouncement = { vm.triggerTestNotificationAnnouncement() },
-                        onRequestAllPermissions = {
-                            multiPermissionLauncher.launch(PermissionHelper.requiredRuntimePermissions())
-                        },
-                        onRequestNotificationListener = {
-                            PermissionHelper.openNotificationListenerSettings(this@MainActivity)
-                        },
-                        onRequestBatteryExemption = {
-                            PermissionHelper.requestIgnoreBatteryOptimizations(this@MainActivity)
-                        },
-                        onRefreshGuardAndPermissions = { vm.refreshGuardAndPermissions() },
                         onToggleFlashlight = { vm.toggleFlashlightManual() },
                         onTestServerPing = { vm.testServerPing() },
                         onStartTimer = { vm.startCountdownTimer(it) },
                         onCancelTimer = { vm.cancelCountdownTimer() },
-                        onRefreshTelemetry = { vm.refreshDeviceTelemetry() },
                         onCheckUpdate = { updateManager.checkForUpdate(silent = false) },
-                        onClearTranscripts = { vm.clearTranscripts() },
                         onQuickReaction = { vm.sendQuickReaction(it) },
                         onInterruptClick = { vm.interruptSuzy() },
-                        onOpenSettings = { showSettings = true }
+                        onOpenSettings = { studioSec ->
+                            initialStudioSection = studioSec
+                            showSettings = true
+                        }
                     )
                 }
             }

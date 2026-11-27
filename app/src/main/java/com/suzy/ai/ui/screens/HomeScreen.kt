@@ -29,46 +29,28 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AutoAwesome
-import androidx.compose.material.icons.rounded.BatteryChargingFull
-import androidx.compose.material.icons.rounded.BatteryStd
-import androidx.compose.material.icons.rounded.Build
-import androidx.compose.material.icons.rounded.Campaign
-import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.ChatBubble
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material.icons.rounded.Delete
-import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.Face
 import androidx.compose.material.icons.rounded.Favorite
-import androidx.compose.material.icons.rounded.FlashlightOff
-import androidx.compose.material.icons.rounded.FlashlightOn
 import androidx.compose.material.icons.rounded.GraphicEq
-import androidx.compose.material.icons.rounded.Hearing
-import androidx.compose.material.icons.rounded.History
-import androidx.compose.material.icons.rounded.Lock
-import androidx.compose.material.icons.rounded.MarkChatRead
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.MicOff
 import androidx.compose.material.icons.rounded.Mood
-import androidx.compose.material.icons.rounded.NotificationsActive
-import androidx.compose.material.icons.rounded.PhoneCallback
 import androidx.compose.material.icons.rounded.PhoneInTalk
 import androidx.compose.material.icons.rounded.PowerSettingsNew
 import androidx.compose.material.icons.rounded.Psychology
+import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material.icons.rounded.RecordVoiceOver
-import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.SentimentVerySatisfied
 import androidx.compose.material.icons.rounded.Settings
-import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material.icons.rounded.Spa
-import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.Subtitles
 import androidx.compose.material.icons.rounded.SubtitlesOff
-import androidx.compose.material.icons.rounded.SystemUpdate
-import androidx.compose.material.icons.rounded.Timer
-import androidx.compose.material.icons.rounded.VolumeOff
 import androidx.compose.material.icons.rounded.VolumeUp
-import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -76,7 +58,6 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -98,14 +79,21 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.suzy.ai.BuildConfig
 import com.suzy.ai.audio.AudioBlockReason
+import com.suzy.ai.data.AutomationRuleItem
+import com.suzy.ai.data.ChatMessageItem
+import com.suzy.ai.data.FinanceEntryItem
+import com.suzy.ai.data.HabitEntryItem
 import com.suzy.ai.data.MemoryItem
 import com.suzy.ai.data.MoodOption
+import com.suzy.ai.data.NoteVaultItem
 import com.suzy.ai.data.PersonaProfile
+import com.suzy.ai.data.PlannerTaskItem
 import com.suzy.ai.data.SavedTranscript
+import com.suzy.ai.data.SecurityAuditItem
 import com.suzy.ai.data.SuzyCatalog
 import com.suzy.ai.data.SuzySettings
+import com.suzy.ai.ui.components.ActiveUiStyleHolder
 import com.suzy.ai.ui.components.GlassBackground
 import com.suzy.ai.ui.components.GlassCard
 import com.suzy.ai.ui.components.SuzyOrb
@@ -143,6 +131,15 @@ fun HomeScreen(
     memories: List<MemoryItem>,
     customPersonas: List<PersonaProfile>,
     transcripts: List<SavedTranscript>,
+    chatMessages: List<ChatMessageItem>,
+    tasks: List<PlannerTaskItem>,
+    financeEntries: List<FinanceEntryItem>,
+    habits: List<HabitEntryItem>,
+    notes: List<NoteVaultItem>,
+    rules: List<AutomationRuleItem>,
+    securityLogs: List<SecurityAuditItem>,
+    parkingNote: String,
+    medicalId: String,
     updateStatus: String,
     onStartClick: () -> Unit,
     onStopClick: () -> Unit,
@@ -151,58 +148,76 @@ fun HomeScreen(
     onToggleCaptions: () -> Unit,
     onSelectMood: (MoodOption) -> Unit,
     onSelectPersona: (PersonaProfile) -> Unit,
-    onCreateCustomPersona: (String, String, String, Long, String) -> Unit,
+    onCreateCustomPersona: (String, String, String, Long, String, String) -> Unit,
     onDeleteCustomPersona: (String) -> Unit,
     onSelectVoice: (String) -> Unit,
     onAddMemory: (String, String) -> Unit,
     onDeleteMemory: (String) -> Unit,
+    onTogglePinMemory: (String) -> Unit,
+    onSendChatMessage: (String, String?, String) -> Unit,
+    onSpeakInGeminiVoice: (String) -> Unit,
+    onClearChat: () -> Unit,
+    onUpdateSettings: (SuzySettings) -> Unit,
+    onRunOmniCommand: (String) -> Unit,
+    onConsumeNavRoute: () -> Unit,
+    onAddTask: (String) -> Unit,
+    onToggleTask: (String) -> Unit,
+    onAddFinance: (String, String, String, Double) -> Unit,
+    onToggleFinanceSettled: (String) -> Unit,
+    onToggleHabit: (String) -> Unit,
+    onAddHabit: (String) -> Unit,
+    onAddNote: (String, String, String) -> Unit,
+    onToggleNote: (String) -> Unit,
+    onAddRule: (String, String, String, String) -> Unit,
+    onSaveParking: (String) -> Unit,
+    onSaveMedical: (String) -> Unit,
     onToggleWakeWord: (Boolean) -> Unit,
     onToggleMediaShield: (Boolean) -> Unit,
     onToggleCallPrivacyShield: (Boolean) -> Unit,
-    onTestWakeWord: () -> Unit,
     onToggleCallAnnouncer: (Boolean) -> Unit,
-    onToggleAnnounceCallerName: (Boolean) -> Unit,
-    onSetAnnouncerRepeat: (Int) -> Unit,
-    onSetAnnouncerStyle: (String) -> Unit,
     onToggleNotificationReader: (Boolean) -> Unit,
-    onToggleReadNotificationContent: (Boolean) -> Unit,
-    onToggleBlockSensitive: (Boolean) -> Unit,
-    onToggleHideOnLockScreen: (Boolean) -> Unit,
-    onToggleTrustedAppsOnly: (Boolean) -> Unit,
-    onToggleBackgroundGuard: (Boolean) -> Unit,
     onTestCallAnnouncement: () -> Unit,
     onTestNotificationAnnouncement: () -> Unit,
-    onRequestAllPermissions: () -> Unit,
-    onRequestNotificationListener: () -> Unit,
-    onRequestBatteryExemption: () -> Unit,
-    onRefreshGuardAndPermissions: () -> Unit,
     onToggleFlashlight: () -> Unit,
     onTestServerPing: () -> Unit,
     onStartTimer: (Int) -> Unit,
     onCancelTimer: () -> Unit,
-    onRefreshTelemetry: () -> Unit,
     onCheckUpdate: () -> Unit,
-    onClearTranscripts: () -> Unit,
     onQuickReaction: (String) -> Unit,
     onInterruptClick: () -> Unit,
-    onOpenSettings: () -> Unit
+    onOpenSettings: (Int) -> Unit
 ) {
+    ActiveUiStyleHolder.skinId = settings.uiThemeSkin
+    ActiveUiStyleHolder.cornerRadiusDp = settings.cornerRadiusDp
+    ActiveUiStyleHolder.backdropPreset = settings.backdropPreset
+
     var selectedTab by remember { mutableIntStateOf(0) }
+    var activeHubModuleId by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(uiState.pendingNavigationRoute) {
+        val route = uiState.pendingNavigationRoute ?: return@LaunchedEffect
+        when {
+            route == "tab_orb" -> selectedTab = 0
+            route == "tab_chat" -> selectedTab = 1
+            route == "tab_personas" -> selectedTab = 2
+            route == "tab_memory" -> selectedTab = 3
+            route == "tab_hub" -> { selectedTab = 4; activeHubModuleId = null }
+            route == "settings_hub" -> onOpenSettings(0)
+            route.startsWith("mod_") -> {
+                selectedTab = 4
+                activeHubModuleId = route
+            }
+        }
+        onConsumeNavRoute()
+    }
+
     val tabs = listOf(
         NavTab("ORB", Icons.Rounded.GraphicEq),
+        NavTab("CHAT", Icons.Rounded.ChatBubble),
         NavTab("PERSONAS", Icons.Rounded.Face),
         NavTab("MEMORY", Icons.Rounded.Psychology),
-        NavTab("ALERTS", Icons.Rounded.NotificationsActive),
-        NavTab("TOOLS", Icons.Rounded.Build)
+        NavTab("HUB", Icons.Rounded.Dashboard)
     )
-
-    LaunchedEffect(selectedTab) {
-        if (selectedTab == 3) {
-            onRefreshGuardAndPermissions()
-        } else if (selectedTab == 4) {
-            onRefreshTelemetry()
-        }
-    }
 
     GlassBackground {
         Column(modifier = Modifier.fillMaxSize()) {
@@ -223,116 +238,135 @@ fun HomeScreen(
                         onToggleSpeaker = onToggleSpeaker,
                         onToggleCaptions = onToggleCaptions,
                         onSelectMood = onSelectMood,
+                        onExitZenMode = { onUpdateSettings(settings.copy(layoutMode = "standard")) },
                         onQuickReaction = onQuickReaction,
                         onInterruptClick = onInterruptClick,
-                        onOpenSettings = onOpenSettings
+                        onOpenSettings = { onOpenSettings(0) }
                     )
-                    1 -> PersonasTab(
+                    1 -> ChatScreen(
+                        settings = settings,
+                        messages = chatMessages,
+                        isSending = uiState.isChatSending,
+                        onSendMessage = onSendChatMessage,
+                        onSpeakInGeminiVoice = onSpeakInGeminiVoice,
+                        onClearChat = onClearChat
+                    )
+                    2 -> PersonasTab(
                         settings = settings,
                         customPersonas = customPersonas,
                         onSelectPersona = {
                             onSelectPersona(it)
                             selectedTab = 0
                         },
-                        onCreateCustomPersona = { name, role, voice, colorHex, prompt ->
-                            onCreateCustomPersona(name, role, voice, colorHex, prompt)
+                        onCreateCustomPersona = { name, role, voice, colorHex, prompt, gender ->
+                            onCreateCustomPersona(name, role, voice, colorHex, prompt, gender)
                             selectedTab = 0
                         },
                         onDeleteCustomPersona = onDeleteCustomPersona,
                         onSelectVoice = onSelectVoice
                     )
-                    2 -> MemoryTab(
+                    3 -> MemoryTab(
                         memories = memories,
+                        isGuestMode = settings.guestModeActive,
                         onAddMemory = onAddMemory,
-                        onDeleteMemory = onDeleteMemory
+                        onDeleteMemory = onDeleteMemory,
+                        onTogglePin = onTogglePinMemory
                     )
-                    3 -> AlertsAndGuardTab(
+                    4 -> HubAndModulesScreen(
+                        activeModuleId = activeHubModuleId,
+                        onSelectModule = { activeHubModuleId = it },
                         uiState = uiState,
                         settings = settings,
+                        tasks = tasks,
+                        financeEntries = financeEntries,
+                        habits = habits,
+                        notes = notes,
+                        rules = rules,
+                        securityLogs = securityLogs,
+                        parkingNote = parkingNote,
+                        medicalId = medicalId,
+                        transcripts = transcripts,
+                        updateStatus = updateStatus,
+                        onUpdateSettings = onUpdateSettings,
+                        onRunCommand = onRunOmniCommand,
+                        onSpeakInGeminiVoice = onSpeakInGeminiVoice,
+                        onAddTask = onAddTask,
+                        onToggleTask = onToggleTask,
+                        onAddFinance = onAddFinance,
+                        onToggleFinanceSettled = onToggleFinanceSettled,
+                        onToggleHabit = onToggleHabit,
+                        onAddHabit = onAddHabit,
+                        onAddNote = onAddNote,
+                        onToggleNote = onToggleNote,
+                        onAddRule = onAddRule,
+                        onSaveParking = onSaveParking,
+                        onSaveMedical = onSaveMedical,
                         onToggleWakeWord = onToggleWakeWord,
                         onToggleMediaShield = onToggleMediaShield,
                         onToggleCallPrivacyShield = onToggleCallPrivacyShield,
-                        onTestWakeWord = {
-                            onTestWakeWord()
-                            selectedTab = 0
-                        },
                         onToggleCallAnnouncer = onToggleCallAnnouncer,
-                        onToggleAnnounceCallerName = onToggleAnnounceCallerName,
-                        onSetAnnouncerRepeat = onSetAnnouncerRepeat,
-                        onSetAnnouncerStyle = onSetAnnouncerStyle,
                         onToggleNotificationReader = onToggleNotificationReader,
-                        onToggleReadNotificationContent = onToggleReadNotificationContent,
-                        onToggleBlockSensitive = onToggleBlockSensitive,
-                        onToggleHideOnLockScreen = onToggleHideOnLockScreen,
-                        onToggleTrustedAppsOnly = onToggleTrustedAppsOnly,
-                        onToggleBackgroundGuard = onToggleBackgroundGuard,
                         onTestCallAnnouncement = onTestCallAnnouncement,
                         onTestNotificationAnnouncement = onTestNotificationAnnouncement,
-                        onRequestAllPermissions = onRequestAllPermissions,
-                        onRequestNotificationListener = onRequestNotificationListener,
-                        onRequestBatteryExemption = onRequestBatteryExemption
-                    )
-                    4 -> ToolsTab(
-                        uiState = uiState,
-                        transcripts = transcripts,
-                        updateStatus = updateStatus,
                         onToggleFlashlight = onToggleFlashlight,
                         onTestServerPing = onTestServerPing,
                         onStartTimer = onStartTimer,
                         onCancelTimer = onCancelTimer,
-                        onClearTranscripts = onClearTranscripts,
                         onCheckUpdate = onCheckUpdate,
-                        onOpenSettings = onOpenSettings
+                        onOpenSettingsStudio = onOpenSettings
                     )
                 }
             }
 
-            // Floating 5-Tab Glassmorphic Navigation Bar
-            GlassCard(
-                shape = RoundedCornerShape(28.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 14.dp, vertical = 9.dp)
-            ) {
-                Row(
+            // Floating 5-Tab Bottom Navigation Bar: ORB • CHAT • PERSONAS • MEMORY • HUB
+            if (settings.layoutMode != "zen" || selectedTab != 0) {
+                GlassCard(
+                    shape = RoundedCornerShape(28.dp),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 6.dp, vertical = 7.dp),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
-                    verticalAlignment = Alignment.CenterVertically
+                        .padding(horizontal = 14.dp, vertical = 9.dp)
                 ) {
-                    tabs.forEachIndexed { index, tab ->
-                        val active = selectedTab == index
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(20.dp))
-                                .background(
-                                    if (active) NeonPurple.copy(alpha = 0.32f) else Color.Transparent
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 6.dp, vertical = 7.dp),
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        tabs.forEachIndexed { index, tab ->
+                            val active = selectedTab == index
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(20.dp))
+                                    .background(if (active) NeonPurple.copy(alpha = 0.32f) else Color.Transparent)
+                                    .border(
+                                        width = if (active) 1.dp else 0.dp,
+                                        color = if (active) NeonCyan.copy(alpha = 0.65f) else Color.Transparent,
+                                        shape = RoundedCornerShape(20.dp)
+                                    )
+                                    .clickable {
+                                        if (index == 4 && selectedTab == 4) activeHubModuleId = null
+                                        selectedTab = index
+                                    }
+                                    .padding(horizontal = if (active) 11.dp else 9.dp, vertical = 8.dp)
+                            ) {
+                                Icon(
+                                    imageVector = tab.icon,
+                                    contentDescription = tab.label,
+                                    tint = if (active) NeonCyan else TextSecondary,
+                                    modifier = Modifier.size(18.dp)
                                 )
-                                .border(
-                                    width = if (active) 1.dp else 0.dp,
-                                    color = if (active) NeonCyan.copy(alpha = 0.65f) else Color.Transparent,
-                                    shape = RoundedCornerShape(20.dp)
-                                )
-                                .clickable { selectedTab = index }
-                                .padding(horizontal = if (active) 11.dp else 9.dp, vertical = 8.dp)
-                        ) {
-                            Icon(
-                                imageVector = tab.icon,
-                                contentDescription = tab.label,
-                                tint = if (active) NeonCyan else TextSecondary,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            if (active) {
-                                Spacer(modifier = Modifier.width(5.dp))
-                                Text(
-                                    text = tab.label,
-                                    color = TextPrimary,
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    letterSpacing = 0.8.sp
-                                )
+                                if (active) {
+                                    Spacer(modifier = Modifier.width(5.dp))
+                                    Text(
+                                        text = tab.label,
+                                        color = TextPrimary,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        letterSpacing = 0.8.sp
+                                    )
+                                }
                             }
                         }
                     }
@@ -353,6 +387,7 @@ private fun OrbTab(
     onToggleSpeaker: () -> Unit,
     onToggleCaptions: () -> Unit,
     onSelectMood: (MoodOption) -> Unit,
+    onExitZenMode: () -> Unit,
     onQuickReaction: (String) -> Unit,
     onInterruptClick: () -> Unit,
     onOpenSettings: () -> Unit
@@ -364,7 +399,7 @@ private fun OrbTab(
     val emotions = listOf(
         EmotionChip("Laugh", Icons.Rounded.SentimentVerySatisfied, NeonCyan, "Zor se khul kar hanso aur koi cute funny si line bolo Hinglish mein!"),
         EmotionChip("Love", Icons.Rounded.Favorite, NeonPink, "Pyaar se soft romantic voice mein ek sweet si line bolo."),
-        EmotionChip("Tease", Icons.Rounded.AutoAwesome, NeonPurple, "Naughty aur playful tone mein mujhe thoda chidhao aur giggle karo!"),
+        EmotionChip("Hero Swag", Icons.Rounded.AutoAwesome, Color(0xFFF59E0B), "Ekdum South movie hero jaisa dumdaar stylish punch dialogue bolo Hinglish mein!"),
         EmotionChip("Care", Icons.Rounded.Spa, Color(0xFF34D399), "Bahut pyaar se caring voice mein mera mood theek karo.")
     )
 
@@ -374,120 +409,112 @@ private fun OrbTab(
         captionScrollState.animateScrollTo(captionScrollState.maxValue)
     }
 
+    val orbPrimary = Color(settings.orbPrimaryHex)
+    val orbSecondary = Color(settings.orbSecondaryHex)
+
     Column(
         modifier = Modifier.fillMaxSize(),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.SpaceBetween
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            GlassCard(
-                shape = RoundedCornerShape(18.dp),
-                accentBorder = NeonPurple,
-                modifier = Modifier.weight(1f).padding(end = 8.dp)
+        if (settings.layoutMode == "zen") {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                GlassCard(shape = RoundedCornerShape(50), accentBorder = NeonCyan, modifier = Modifier.clickable { onExitZenMode() }) {
+                    Text("EXIT ZEN", color = NeonCyan, fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
+                }
+            }
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                GlassCard(
+                    shape = RoundedCornerShape(18.dp),
+                    accentBorder = NeonPurple,
+                    modifier = Modifier.weight(1f).padding(end = 8.dp)
+                ) {
+                    Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = settings.activePersonaName.uppercase(),
+                                color = TextPrimary,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 1.8.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            if (isActive && uiState.callDurationSec > 0L) {
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(text = formatDuration(uiState.callDurationSec), color = NeonPink, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            } else if (!isActive && settings.wakeWordEnabled) {
+                                Spacer(modifier = Modifier.width(8.dp))
+                                val (badgeText, badgeColor) = when (uiState.audioBlockReason) {
+                                    AudioBlockReason.MEDIA_PLAYING -> "MEDIA SHIELD" to Color(0xFFF59E0B)
+                                    AudioBlockReason.PHONE_CALL_ACTIVE -> "CALL SHIELD" to Color(0xFFEF4444)
+                                    else -> if (uiState.isWakeWordListening) ("WAKE ON" to Color(0xFF34D399)) else ("STANDBY" to TextSecondary)
+                                }
+                                Text(text = badgeText, color = badgeColor, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
                         Text(
-                            text = settings.activePersonaName.uppercase(),
-                            color = TextPrimary,
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 1.8.sp,
+                            text = "${settings.voiceName} • ${settings.orbStyle.uppercase()} • ${memoryCount} MEM",
+                            color = NeonCyan,
+                            fontSize = 9.sp,
+                            letterSpacing = 0.7.sp,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
-                        if (isActive && uiState.callDurationSec > 0L) {
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = formatDuration(uiState.callDurationSec),
-                                color = NeonPink,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        } else if (!isActive && settings.wakeWordEnabled) {
-                            Spacer(modifier = Modifier.width(8.dp))
-                            val (badgeText, badgeColor) = when (uiState.audioBlockReason) {
-                                AudioBlockReason.MEDIA_PLAYING -> "MEDIA SHIELD" to Color(0xFFF59E0B)
-                                AudioBlockReason.PHONE_CALL_ACTIVE -> "CALL SHIELD" to Color(0xFFEF4444)
-                                else -> if (uiState.isWakeWordListening) ("WAKE ON" to Color(0xFF34D399)) else ("STANDBY" to TextSecondary)
-                            }
-                            Text(
-                                text = badgeText,
-                                color = badgeColor,
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.Bold
+                    }
+                }
+
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    GlassCard(shape = CircleShape, accentBorder = if (settings.captionsEnabled) NeonPurple else null) {
+                        IconButton(onClick = onToggleCaptions, modifier = Modifier.size(38.dp)) {
+                            Icon(
+                                imageVector = if (settings.captionsEnabled) Icons.Rounded.Subtitles else Icons.Rounded.SubtitlesOff,
+                                contentDescription = "Live Captions",
+                                tint = if (settings.captionsEnabled) NeonCyan else TextSecondary,
+                                modifier = Modifier.size(18.dp)
                             )
                         }
                     }
-                    Text(
-                        text = "${settings.voiceName} • ${if (uiState.isSpeakerOn) "SPEAKER" else "EAR"} • ${memoryCount} MEM",
-                        color = NeonCyan,
-                        fontSize = 9.sp,
-                        letterSpacing = 0.8.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                GlassCard(
-                    shape = CircleShape,
-                    accentBorder = if (settings.captionsEnabled) NeonPurple else null
-                ) {
-                    IconButton(onClick = onToggleCaptions, modifier = Modifier.size(38.dp)) {
-                        Icon(
-                            imageVector = if (settings.captionsEnabled) Icons.Rounded.Subtitles else Icons.Rounded.SubtitlesOff,
-                            contentDescription = "Live Captions",
-                            tint = if (settings.captionsEnabled) NeonCyan else TextSecondary,
-                            modifier = Modifier.size(18.dp)
-                        )
+                    GlassCard(shape = CircleShape, accentBorder = if (uiState.isSpeakerOn) NeonCyan else null) {
+                        IconButton(onClick = onToggleSpeaker, modifier = Modifier.size(38.dp)) {
+                            Icon(
+                                imageVector = if (uiState.isSpeakerOn) Icons.Rounded.VolumeUp else Icons.Rounded.PhoneInTalk,
+                                contentDescription = "Speaker Toggle",
+                                tint = if (uiState.isSpeakerOn) NeonCyan else TextPrimary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
                     }
-                }
 
-                GlassCard(
-                    shape = CircleShape,
-                    accentBorder = if (uiState.isSpeakerOn) NeonCyan else null
-                ) {
-                    IconButton(onClick = onToggleSpeaker, modifier = Modifier.size(38.dp)) {
-                        Icon(
-                            imageVector = if (uiState.isSpeakerOn) Icons.Rounded.VolumeUp else Icons.Rounded.PhoneInTalk,
-                            contentDescription = "Speaker Toggle",
-                            tint = if (uiState.isSpeakerOn) NeonCyan else TextPrimary,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-                }
-
-                GlassCard(shape = CircleShape) {
-                    IconButton(onClick = onOpenSettings, modifier = Modifier.size(38.dp)) {
-                        Icon(
-                            imageVector = Icons.Rounded.Settings,
-                            contentDescription = "Settings",
-                            tint = TextPrimary,
-                            modifier = Modifier.size(18.dp)
-                        )
+                    GlassCard(shape = CircleShape) {
+                        IconButton(onClick = onOpenSettings, modifier = Modifier.size(38.dp)) {
+                            Icon(Icons.Rounded.Settings, contentDescription = "Settings", tint = TextPrimary, modifier = Modifier.size(18.dp))
+                        }
                     }
                 }
             }
         }
 
         Column(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
-                .padding(vertical = 4.dp),
+            modifier = Modifier.weight(1f).fillMaxWidth().padding(vertical = 4.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
             SuzyOrb(
                 state = uiState.state,
                 amplitude = uiState.amplitude,
-                orbSize = if (isActive && settings.captionsEnabled) 205.dp else 235.dp
+                orbSize = if (settings.layoutMode == "zen") 270.dp else if (isActive && settings.captionsEnabled) 205.dp else 235.dp,
+                orbStyle = settings.orbStyle,
+                primaryColor = orbPrimary,
+                secondaryColor = orbSecondary,
+                glowIntensity = settings.orbGlowIntensity,
+                spinSpeed = settings.orbSpinSpeed
             )
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -505,8 +532,6 @@ private fun OrbTab(
                     uiState.state == SuzyState.SPEAKING -> NeonPink
                     uiState.state == SuzyState.LISTENING -> NeonCyan
                     uiState.state == SuzyState.ERROR -> Color(0xFFEF4444)
-                    uiState.audioBlockReason == AudioBlockReason.MEDIA_PLAYING -> Color(0xFFF59E0B)
-                    uiState.audioBlockReason == AudioBlockReason.PHONE_CALL_ACTIVE -> Color(0xFFEF4444)
                     else -> NeonPurple
                 }
             ) {
@@ -521,53 +546,28 @@ private fun OrbTab(
                 )
             }
 
-            if (settings.captionsEnabled && isActive) {
+            if (settings.captionsEnabled && isActive && settings.layoutMode != "zen") {
                 Spacer(modifier = Modifier.height(8.dp))
                 GlassCard(
                     shape = RoundedCornerShape(16.dp),
                     accentBorder = if (uiState.state == SuzyState.SPEAKING) NeonPink else NeonPurple,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 6.dp)
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 6.dp)
                 ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 7.dp)
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(5.dp)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(6.dp)
-                                    .clip(CircleShape)
-                                    .background(if (uiState.state == SuzyState.SPEAKING) NeonPink else NeonCyan)
-                            )
-                            Text(
-                                text = "${settings.activePersonaName.uppercase()} • LIVE TRANSCRIPT",
-                                color = NeonCyan,
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.Bold,
-                                letterSpacing = 1.sp
-                            )
-                        }
-
+                    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 7.dp)) {
+                        Text(
+                            text = "${settings.activePersonaName.uppercase()} • LIVE TRANSCRIPT",
+                            color = NeonCyan,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 1.sp
+                        )
                         Spacer(modifier = Modifier.height(3.dp))
-
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(min = 24.dp, max = 56.dp)
-                                .verticalScroll(captionScrollState)
-                        ) {
+                        Box(modifier = Modifier.fillMaxWidth().heightIn(min = 24.dp, max = 56.dp).verticalScroll(captionScrollState)) {
                             Text(
                                 text = captionToShow.ifBlank { "Baat shuru karo, live transcript yahan dikhega..." },
                                 color = if (captionToShow.isBlank()) TextSecondary else TextPrimary,
                                 fontSize = 12.sp,
                                 lineHeight = 17.sp,
-                                textAlign = TextAlign.Start,
                                 modifier = Modifier.fillMaxWidth()
                             )
                         }
@@ -577,65 +577,43 @@ private fun OrbTab(
         }
 
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 4.dp),
+            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState())
-                    .padding(bottom = 8.dp)
-            ) {
-                SuzyCatalog.moods.forEach { mood ->
-                    val selected = settings.activeMoodId == mood.id
-                    GlassCard(
-                        shape = RoundedCornerShape(50),
-                        accentBorder = if (selected) mood.color else null,
-                        modifier = Modifier.clickable { onSelectMood(mood) }
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+            if (settings.layoutMode != "zen") {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(bottom = 8.dp)
+                ) {
+                    SuzyCatalog.moods.forEach { mood ->
+                        val selected = settings.activeMoodId == mood.id
+                        GlassCard(
+                            shape = RoundedCornerShape(50),
+                            accentBorder = if (selected) mood.color else null,
+                            modifier = Modifier.clickable { onSelectMood(mood) }
                         ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Mood,
-                                contentDescription = mood.label,
-                                tint = if (selected) mood.color else TextSecondary,
-                                modifier = Modifier.size(13.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = mood.label,
-                                color = if (selected) TextPrimary else TextSecondary,
-                                fontSize = 10.sp,
-                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)) {
+                                Icon(Icons.Rounded.Mood, contentDescription = mood.label, tint = if (selected) mood.color else TextSecondary, modifier = Modifier.size(13.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(mood.label, color = if (selected) TextPrimary else TextSecondary, fontSize = 10.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
+                            }
                         }
                     }
                 }
-            }
 
-            if (isActive) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.padding(bottom = 10.dp)
-                ) {
-                    emotions.forEach { item ->
-                        GlassCard(
-                            shape = RoundedCornerShape(50),
-                            accentBorder = item.tint,
-                            modifier = Modifier.clickable { onQuickReaction(item.prompt) }
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                if (isActive) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 10.dp)) {
+                        emotions.forEach { item ->
+                            GlassCard(
+                                shape = RoundedCornerShape(50),
+                                accentBorder = item.tint,
+                                modifier = Modifier.clickable { onQuickReaction(item.prompt) }
                             ) {
-                                Icon(item.icon, contentDescription = item.label, tint = item.tint, modifier = Modifier.size(13.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(item.label, color = TextPrimary, fontSize = 10.sp, fontWeight = FontWeight.Medium)
+                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)) {
+                                    Icon(item.icon, contentDescription = item.label, tint = item.tint, modifier = Modifier.size(13.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(item.label, color = TextPrimary, fontSize = 10.sp, fontWeight = FontWeight.Medium)
+                                }
                             }
                         }
                     }
@@ -648,10 +626,7 @@ private fun OrbTab(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 if (isActive) {
-                    GlassCard(
-                        shape = CircleShape,
-                        accentBorder = if (uiState.isMuted) Color(0xFFEF4444) else NeonCyan
-                    ) {
+                    GlassCard(shape = CircleShape, accentBorder = if (uiState.isMuted) Color(0xFFEF4444) else NeonCyan) {
                         IconButton(onClick = onToggleMute, modifier = Modifier.size(48.dp)) {
                             Icon(
                                 imageVector = if (uiState.isMuted) Icons.Rounded.MicOff else Icons.Rounded.Mic,
@@ -670,28 +645,15 @@ private fun OrbTab(
                         .width(180.dp)
                         .clip(RoundedCornerShape(32.dp))
                         .background(
-                            if (isActive) {
-                                Brush.horizontalGradient(listOf(Color(0xFFDC2626), Color(0xFFEC4899)))
-                            } else {
-                                Brush.horizontalGradient(listOf(NeonPurple, NeonCyan))
-                            }
+                            if (isActive) Brush.horizontalGradient(listOf(Color(0xFFDC2626), Color(0xFFEC4899)))
+                            else Brush.horizontalGradient(listOf(NeonPurple, NeonCyan))
                         )
                         .clickable { if (isActive) onStopClick() else onStartClick() }
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = if (isActive) Icons.Rounded.Stop else Icons.Rounded.PowerSettingsNew,
-                            contentDescription = null,
-                            tint = Color.White
-                        )
+                        Icon(if (isActive) Icons.Rounded.Stop else Icons.Rounded.PowerSettingsNew, contentDescription = null, tint = Color.White)
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = if (isActive) "END CALL" else "START CALL",
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp,
-                            letterSpacing = 1.4.sp
-                        )
+                        Text(if (isActive) "END CALL" else "START CALL", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp, letterSpacing = 1.4.sp)
                     }
                 }
 
@@ -713,7 +675,7 @@ private fun PersonasTab(
     settings: SuzySettings,
     customPersonas: List<PersonaProfile>,
     onSelectPersona: (PersonaProfile) -> Unit,
-    onCreateCustomPersona: (String, String, String, Long, String) -> Unit,
+    onCreateCustomPersona: (String, String, String, Long, String, String) -> Unit,
     onDeleteCustomPersona: (String) -> Unit,
     onSelectVoice: (String) -> Unit
 ) {
@@ -723,8 +685,8 @@ private fun PersonasTab(
     if (showBuilder) {
         CustomPersonaDialog(
             onDismiss = { showBuilder = false },
-            onSave = { name, role, voice, colorHex, prompt ->
-                onCreateCustomPersona(name, role, voice, colorHex, prompt)
+            onSave = { name, role, voice, colorHex, prompt, gender ->
+                onCreateCustomPersona(name, role, voice, colorHex, prompt, gender)
                 showBuilder = false
             }
         )
@@ -737,29 +699,12 @@ private fun PersonasTab(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "PERSONAS & VOICE STUDIO",
-                    color = NeonCyan,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.5.sp
-                )
-                Text(
-                    text = "1-tap live switch • Har persona ka hardcoded alag behavior hai",
-                    color = TextSecondary,
-                    fontSize = 11.sp
-                )
+                Text("PERSONAS & VOICE STUDIO", color = NeonCyan, fontSize = 15.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
+                Text("Female Companions + Vikram South Movie Mass Hero", color = TextSecondary, fontSize = 11.sp)
             }
 
-            GlassCard(
-                shape = RoundedCornerShape(14.dp),
-                accentBorder = NeonPink,
-                modifier = Modifier.clickable { showBuilder = true }
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
-                ) {
+            GlassCard(shape = RoundedCornerShape(14.dp), accentBorder = NeonPink, modifier = Modifier.clickable { showBuilder = true }) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
                     Icon(Icons.Rounded.Add, contentDescription = "Create", tint = NeonPink, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(4.dp))
                     Text("CREATE", color = TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
@@ -767,42 +712,28 @@ private fun PersonasTab(
             }
         }
 
-        Spacer(modifier = Modifier.height(10.dp))
+        Spacer(modifier = Modifier.height(8.dp))
 
-        Text(
-            text = "SECTION 1 • FEMALE VOICES (12)",
-            color = TextSecondary,
-            fontSize = 10.sp,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 1.sp
-        )
+        Text("SOUTH MOVIE HERO MALE VOICES (4) & FEMALE VOICES (12)", color = TextSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.8.sp)
         Spacer(modifier = Modifier.height(6.dp))
         Row(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState())
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
         ) {
-            SuzyCatalog.femaleVoices.forEach { v ->
+            (SuzyCatalog.maleHeroVoices + SuzyCatalog.femaleVoices).forEach { v ->
                 val selected = settings.voiceName.equals(v.id, ignoreCase = true)
-                GlassCard(
-                    shape = RoundedCornerShape(14.dp),
-                    accentBorder = if (selected) NeonCyan else null,
-                    modifier = Modifier.clickable { onSelectVoice(v.id) }
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(horizontal = 11.dp, vertical = 7.dp)
-                    ) {
+                val borderTint = if (selected) (if (v.gender == "Male") Color(0xFFF59E0B) else NeonCyan) else null
+                GlassCard(shape = RoundedCornerShape(14.dp), accentBorder = borderTint, modifier = Modifier.clickable { onSelectVoice(v.id) }) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 11.dp, vertical = 7.dp)) {
                         Icon(
-                            imageVector = Icons.Rounded.RecordVoiceOver,
+                            Icons.Rounded.RecordVoiceOver,
                             contentDescription = null,
-                            tint = if (selected) NeonCyan else TextSecondary,
+                            tint = if (v.gender == "Male") Color(0xFFF59E0B) else NeonCyan,
                             modifier = Modifier.size(14.dp)
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Column {
-                            Text(v.id, color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Text("${v.id} (${v.gender.first()})", color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                             Text(v.style, color = TextSecondary, fontSize = 9.sp)
                         }
                     }
@@ -810,15 +741,9 @@ private fun PersonasTab(
             }
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(10.dp))
 
-        Text(
-            text = "SECTION 2 • GIRL COMPANION PERSONAS (${allPersonas.size})",
-            color = TextSecondary,
-            fontSize = 10.sp,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 1.sp
-        )
+        Text("COMPANION & HERO PERSONAS (${allPersonas.size})", color = TextSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
         Spacer(modifier = Modifier.height(6.dp))
 
         LazyVerticalGrid(
@@ -833,87 +758,33 @@ private fun PersonasTab(
                 GlassCard(
                     shape = RoundedCornerShape(20.dp),
                     accentBorder = if (isSelected) persona.accentColor else null,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onSelectPersona(persona) }
+                    modifier = Modifier.fillMaxWidth().clickable { onSelectPersona(persona) }
                 ) {
                     Column(modifier = Modifier.padding(13.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                             Box(
                                 contentAlignment = Alignment.Center,
-                                modifier = Modifier
-                                    .size(34.dp)
-                                    .clip(CircleShape)
-                                    .background(persona.accentColor.copy(alpha = 0.22f))
+                                modifier = Modifier.size(34.dp).clip(CircleShape).background(persona.accentColor.copy(alpha = 0.22f))
                             ) {
-                                Icon(
-                                    imageVector = persona.icon,
-                                    contentDescription = persona.name,
-                                    tint = persona.accentColor,
-                                    modifier = Modifier.size(18.dp)
-                                )
+                                Icon(persona.icon, contentDescription = persona.name, tint = persona.accentColor, modifier = Modifier.size(18.dp))
                             }
-
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 if (isSelected) {
-                                    Text(
-                                        text = "LIVE",
-                                        color = persona.accentColor,
-                                        fontSize = 9.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        letterSpacing = 0.8.sp
-                                    )
+                                    Text("LIVE", color = persona.accentColor, fontSize = 9.sp, fontWeight = FontWeight.Bold)
                                 }
                                 if (persona.isCustom) {
                                     Spacer(modifier = Modifier.width(4.dp))
-                                    Icon(
-                                        imageVector = Icons.Rounded.Delete,
-                                        contentDescription = "Delete Custom",
-                                        tint = TextSecondary,
-                                        modifier = Modifier
-                                            .size(16.dp)
-                                            .clickable { onDeleteCustomPersona(persona.id) }
-                                    )
+                                    Icon(Icons.Rounded.Delete, contentDescription = "Delete", tint = TextSecondary, modifier = Modifier.size(16.dp).clickable { onDeleteCustomPersona(persona.id) })
                                 }
                             }
                         }
                         Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = persona.name,
-                            color = TextPrimary,
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Text(
-                            text = persona.role,
-                            color = persona.accentColor,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Medium,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
+                        Text(persona.name, color = TextPrimary, fontSize = 15.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(persona.role, color = persona.accentColor, fontSize = 11.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = persona.tagline,
-                            color = TextSecondary,
-                            fontSize = 10.sp,
-                            lineHeight = 13.sp,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis
-                        )
+                        Text(persona.tagline, color = TextSecondary, fontSize = 10.sp, lineHeight = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = "Voice: ${persona.voiceName}",
-                            color = NeonCyan,
-                            fontSize = 9.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
+                        Text("Voice: ${persona.voiceName} • ${persona.gender}", color = NeonCyan, fontSize = 9.sp, fontWeight = FontWeight.SemiBold)
                     }
                 }
             }
@@ -924,25 +795,22 @@ private fun PersonasTab(
 @Composable
 private fun CustomPersonaDialog(
     onDismiss: () -> Unit,
-    onSave: (String, String, String, Long, String) -> Unit
+    onSave: (String, String, String, Long, String, String) -> Unit
 ) {
     var name by remember { mutableStateOf("") }
     var role by remember { mutableStateOf("") }
+    var gender by remember { mutableStateOf("Female") }
     var selectedVoice by remember { mutableStateOf("Aoede") }
     var selectedHex by remember { mutableLongStateOf(0xFFEC4899L) }
     var prompt by remember {
-        mutableStateOf("Tum user ki bahut sweet aur expressive Indian girlfriend ho. Pyaari natural Hinglish mein chhote (1-2 lines) dil se nikle jawab do.")
+        mutableStateOf("Tum user ki bahut sweet aur expressive Indian companion ho. Natural Hinglish mein chhote (1-2 lines) dil se nikle jawab do.")
     }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = Color(0xFF101226),
         title = {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Text("Create Custom Persona", color = TextPrimary, fontSize = 17.sp, fontWeight = FontWeight.Bold)
                 IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
                     Icon(Icons.Rounded.Close, contentDescription = "Close", tint = TextSecondary)
@@ -950,36 +818,27 @@ private fun CustomPersonaDialog(
             }
         },
         text = {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = Modifier.verticalScroll(rememberScrollState())
-            ) {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text("Persona Name (e.g. Aarohi)") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                OutlinedTextField(
-                    value = role,
-                    onValueChange = { role = it },
-                    label = { Text("Vibe / Tagline (e.g. Sweet Crush)") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.verticalScroll(rememberScrollState())) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("Female", "Male").forEach { g ->
+                        FilterChip(
+                            selected = gender == g,
+                            onClick = {
+                                gender = g
+                                selectedVoice = if (g == "Male") "Charon" else "Aoede"
+                            },
+                            label = { Text(g, fontSize = 11.sp) }
+                        )
+                    }
+                }
+                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Persona Name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = role, onValueChange = { role = it }, label = { Text("Vibe / Role") }, singleLine = true, modifier = Modifier.fillMaxWidth())
 
                 Text("Select Voice", color = NeonCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    modifier = Modifier.horizontalScroll(rememberScrollState())
-                ) {
-                    SuzyCatalog.femaleVoices.forEach { v ->
-                        FilterChip(
-                            selected = selectedVoice == v.id,
-                            onClick = { selectedVoice = v.id },
-                            label = { Text(v.id, fontSize = 11.sp) }
-                        )
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                    val voices = if (gender == "Male") SuzyCatalog.maleHeroVoices else SuzyCatalog.femaleVoices
+                    voices.forEach { v ->
+                        FilterChip(selected = selectedVoice == v.id, onClick = { selectedVoice = v.id }, label = { Text(v.id, fontSize = 11.sp) })
                     }
                 }
 
@@ -987,46 +846,24 @@ private fun CustomPersonaDialog(
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     SuzyCatalog.accentPresets.forEach { preset ->
                         Box(
-                            modifier = Modifier
-                                .size(28.dp)
-                                .clip(CircleShape)
-                                .background(preset.color)
-                                .border(
-                                    width = if (selectedHex == preset.hex) 2.5.dp else 0.dp,
-                                    color = Color.White,
-                                    shape = CircleShape
-                                )
+                            modifier = Modifier.size(28.dp).clip(CircleShape).background(preset.color)
+                                .border(if (selectedHex == preset.hex) 2.5.dp else 0.dp, Color.White, CircleShape)
                                 .clickable { selectedHex = preset.hex }
                         )
                     }
                 }
 
-                OutlinedTextField(
-                    value = prompt,
-                    onValueChange = { prompt = it },
-                    label = { Text("Custom Speaking Style") },
-                    minLines = 3,
-                    maxLines = 5,
-                    modifier = Modifier.fillMaxWidth()
-                )
+                OutlinedTextField(value = prompt, onValueChange = { prompt = it }, label = { Text("Speaking Style Prompt") }, minLines = 3, maxLines = 5, modifier = Modifier.fillMaxWidth())
             }
         },
         confirmButton = {
             Button(
-                onClick = {
-                    if (name.isNotBlank()) {
-                        onSave(name, role, selectedVoice, selectedHex, prompt)
-                    }
-                },
+                onClick = { if (name.isNotBlank()) onSave(name, role, selectedVoice, selectedHex, prompt, gender) },
                 colors = ButtonDefaults.buttonColors(containerColor = NeonPurple)
-            ) {
-                Text("SAVE & ACTIVATE", fontWeight = FontWeight.Bold)
-            }
+            ) { Text("SAVE & ACTIVATE", fontWeight = FontWeight.Bold) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("CANCEL", color = TextSecondary)
-            }
+            TextButton(onClick = onDismiss) { Text("CANCEL", color = TextSecondary) }
         }
     )
 }
@@ -1034,52 +871,38 @@ private fun CustomPersonaDialog(
 @Composable
 private fun MemoryTab(
     memories: List<MemoryItem>,
+    isGuestMode: Boolean,
     onAddMemory: (String, String) -> Unit,
-    onDeleteMemory: (String) -> Unit
+    onDeleteMemory: (String) -> Unit,
+    onTogglePin: (String) -> Unit
 ) {
-    val categories = listOf("Profile", "Preference", "Routine", "Relationship")
+    val categories = listOf("Profile", "Preference", "Routine", "Relationship", "Goals")
     var selectedCategory by remember { mutableStateOf("Profile") }
     var inputText by remember { mutableStateOf("") }
+    var searchQuery by remember { mutableStateOf("") }
+
+    val filtered = remember(memories, searchQuery) {
+        if (searchQuery.isBlank()) memories
+        else memories.filter { it.content.contains(searchQuery, true) || it.category.contains(searchQuery, true) }
+    }
 
     Column(modifier = Modifier.fillMaxSize()) {
+        Text("PERMANENT MEMORY VAULT", color = NeonCyan, fontSize = 15.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
         Text(
-            text = "PERSONAL MEMORY VAULT",
-            color = NeonCyan,
-            fontSize = 15.sp,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 1.5.sp
-        )
-        Text(
-            text = "Yahan save ki gayi baatein live call mein turant sync hoti hain",
-            color = TextSecondary,
+            text = if (isGuestMode) "GUEST SANDBOX ACTIVE — Private memories hidden during guest testing" else "Voice, Chat aur har screen mein AI ko yeh sab hamesha yaad rahega",
+            color = if (isGuestMode) Color(0xFFF59E0B) else TextSecondary,
             fontSize = 11.sp
         )
 
-        Spacer(modifier = Modifier.height(10.dp))
+        Spacer(modifier = Modifier.height(8.dp))
 
-        Text(
-            text = "SECTION 1 • ADD NEW MEMORY",
-            color = TextSecondary,
-            fontSize = 10.sp,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 1.sp
-        )
-        Spacer(modifier = Modifier.height(6.dp))
         GlassCard(shape = RoundedCornerShape(18.dp), accentBorder = NeonPurple, modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    modifier = Modifier.horizontalScroll(rememberScrollState())
-                ) {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
                     categories.forEach { cat ->
-                        FilterChip(
-                            selected = selectedCategory == cat,
-                            onClick = { selectedCategory = cat },
-                            label = { Text(cat, fontSize = 11.sp) }
-                        )
+                        FilterChip(selected = selectedCategory == cat, onClick = { selectedCategory = cat }, label = { Text(cat, fontSize = 11.sp) })
                     }
                 }
-
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(
                         value = inputText,
@@ -1090,805 +913,66 @@ private fun MemoryTab(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Button(
-                        onClick = {
-                            if (inputText.isNotBlank()) {
-                                onAddMemory(selectedCategory, inputText)
-                                inputText = ""
-                            }
-                        },
+                        onClick = { if (inputText.isNotBlank()) { onAddMemory(selectedCategory, inputText); inputText = "" } },
                         shape = RoundedCornerShape(14.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = NeonPurple),
                         modifier = Modifier.height(54.dp)
-                    ) {
-                        Icon(Icons.Rounded.Add, contentDescription = "Add Memory")
-                    }
+                    ) { Icon(Icons.Rounded.Add, contentDescription = "Add") }
                 }
             }
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(8.dp))
 
-        Text(
-            text = "SECTION 2 • SAVED MEMORIES (${memories.size})",
-            color = TextSecondary,
-            fontSize = 10.sp,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 1.sp
+        OutlinedTextField(
+            value = searchQuery,
+            onValueChange = { searchQuery = it },
+            placeholder = { Text("Search saved memories (${memories.size})...", fontSize = 12.sp) },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth()
         )
-        Spacer(modifier = Modifier.height(6.dp))
 
-        if (memories.isEmpty()) {
+        Spacer(modifier = Modifier.height(8.dp))
+
+        if (isGuestMode) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(
-                    text = "Abhi Memory Vault khaali hai.\nApna naam, pasand ya routine upar add karein!",
-                    color = TextSecondary,
-                    fontSize = 13.sp,
-                    textAlign = TextAlign.Center
-                )
+                Text("Guest Mode ON hai — Owner Security screen se Guest Mode band karein.", color = Color(0xFFF59E0B), textAlign = TextAlign.Center)
+            }
+        } else if (filtered.isEmpty()) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text("Abhi Memory Vault khaali hai.
+Upar apni pasand ya baatein add karein!", color = TextSecondary, fontSize = 13.sp, textAlign = TextAlign.Center)
             }
         } else {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.weight(1f)) {
-                items(memories, key = { it.id }) { mem ->
-                    GlassCard(shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
+                items(filtered, key = { it.id }) { mem ->
+                    GlassCard(
+                        shape = RoundedCornerShape(14.dp),
+                        accentBorder = if (mem.pinned) NeonPink else null,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
                         Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 13.dp, vertical = 10.dp),
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 13.dp, vertical = 10.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
-                                Text(
-                                    text = "${mem.category.uppercase()}  •  ${mem.createdAt}",
-                                    color = NeonCyan,
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
+                                Text("${mem.category.uppercase()}  •  ${mem.createdAt}", color = NeonCyan, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                                 Spacer(modifier = Modifier.height(3.dp))
-                                Text(text = mem.content, color = TextPrimary, fontSize = 13.sp)
+                                Text(mem.content, color = TextPrimary, fontSize = 13.sp)
                             }
-                            IconButton(onClick = { onDeleteMemory(mem.id) }, modifier = Modifier.size(32.dp)) {
-                                Icon(Icons.Rounded.Delete, contentDescription = "Delete Memory", tint = TextSecondary, modifier = Modifier.size(18.dp))
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun AlertsAndGuardTab(
-    uiState: SuzyUiState,
-    settings: SuzySettings,
-    onToggleWakeWord: (Boolean) -> Unit,
-    onToggleMediaShield: (Boolean) -> Unit,
-    onToggleCallPrivacyShield: (Boolean) -> Unit,
-    onTestWakeWord: () -> Unit,
-    onToggleCallAnnouncer: (Boolean) -> Unit,
-    onToggleAnnounceCallerName: (Boolean) -> Unit,
-    onSetAnnouncerRepeat: (Int) -> Unit,
-    onSetAnnouncerStyle: (String) -> Unit,
-    onToggleNotificationReader: (Boolean) -> Unit,
-    onToggleReadNotificationContent: (Boolean) -> Unit,
-    onToggleBlockSensitive: (Boolean) -> Unit,
-    onToggleHideOnLockScreen: (Boolean) -> Unit,
-    onToggleTrustedAppsOnly: (Boolean) -> Unit,
-    onToggleBackgroundGuard: (Boolean) -> Unit,
-    onTestCallAnnouncement: () -> Unit,
-    onTestNotificationAnnouncement: () -> Unit,
-    onRequestAllPermissions: () -> Unit,
-    onRequestNotificationListener: () -> Unit,
-    onRequestBatteryExemption: () -> Unit
-) {
-    val styles = listOf("Girlfriend", "Bestie", "Jarvis")
-    val perms = uiState.permissions
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "WAKE-WORD & PRIVACY SHIELD",
-                    color = NeonCyan,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.4.sp
-                )
-                Text(
-                    text = "Media-Aware & Call-Locked Gemini Voice (${settings.voiceName})",
-                    color = TextSecondary,
-                    fontSize = 11.sp
-                )
-            }
-
-            GlassCard(
-                shape = RoundedCornerShape(50),
-                accentBorder = if (uiState.isGuardRunning) Color(0xFF34D399) else NeonPink
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Shield,
-                        contentDescription = null,
-                        tint = if (uiState.isGuardRunning) Color(0xFF34D399) else NeonPink,
-                        modifier = Modifier.size(14.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = if (uiState.isGuardRunning) "GUARD ON" else "GUARD OFF",
-                        color = TextPrimary,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            }
-        }
-
-        // Section 1: Smart Wake Word + Media & Call Isolation Shield
-        Text("SECTION 1 • SMART WAKE WORD & AUDIO PRIVACY SHIELD", color = TextSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
-        GlassCard(shape = RoundedCornerShape(20.dp), accentBorder = NeonCyan, modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Wake Word (\"Hey ${settings.activePersonaName}\" / \"Hey Suzy\")", color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                        Text("Bolte hi Real Gemini Live Voice call start hoga", color = TextSecondary, fontSize = 11.sp)
-                    }
-                    Switch(checked = settings.wakeWordEnabled, onCheckedChange = onToggleWakeWord)
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                        Icon(Icons.Rounded.VolumeOff, contentDescription = null, tint = Color(0xFFF59E0B), modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Column {
-                            Text("YouTube & Media Playback Blocker", color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                            Text("Video/Audio play hote hi mic release hoga (no blinking, no listening)", color = TextSecondary, fontSize = 10.sp)
-                        }
-                    }
-                    Switch(checked = settings.mediaShieldEnabled, onCheckedChange = onToggleMediaShield)
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                        Icon(Icons.Rounded.Lock, contentDescription = null, tint = Color(0xFFEF4444), modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Column {
-                            Text("Phone & VoIP Call Privacy Lock", color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                            Text("Phone ya WhatsApp call par baat karte waqt AI bilkul nahi sunega", color = TextSecondary, fontSize = 10.sp)
-                        }
-                    }
-                    Switch(checked = settings.callPrivacyShieldEnabled, onCheckedChange = onToggleCallPrivacyShield)
-                }
-
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Rounded.Hearing,
-                        contentDescription = null,
-                        tint = when {
-                            uiState.audioBlockReason == AudioBlockReason.MEDIA_PLAYING -> Color(0xFFF59E0B)
-                            uiState.audioBlockReason == AudioBlockReason.PHONE_CALL_ACTIVE -> Color(0xFFEF4444)
-                            uiState.isWakeWordListening -> Color(0xFF34D399)
-                            else -> TextSecondary
-                        },
-                        modifier = Modifier.size(15.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = when {
-                            !settings.wakeWordEnabled -> "Status: Wake Word Off"
-                            uiState.audioBlockReason == AudioBlockReason.MEDIA_PLAYING -> "Status: Paused (YouTube / Media Sound Detected)"
-                            uiState.audioBlockReason == AudioBlockReason.PHONE_CALL_ACTIVE -> "Status: Locked (Phone / VoIP Call Active)"
-                            uiState.isWakeWordListening -> "Status: Active — Listening for \"Hey ${settings.activePersonaName}\""
-                            else -> "Status: Standby"
-                        },
-                        color = when {
-                            uiState.audioBlockReason == AudioBlockReason.MEDIA_PLAYING -> Color(0xFFF59E0B)
-                            uiState.audioBlockReason == AudioBlockReason.PHONE_CALL_ACTIVE -> Color(0xFFEF4444)
-                            uiState.isWakeWordListening -> Color(0xFF34D399)
-                            else -> TextSecondary
-                        },
-                        fontSize = 11.sp
-                    )
-                }
-
-                Button(
-                    onClick = onTestWakeWord,
-                    shape = RoundedCornerShape(14.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = NeonCyan),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(Icons.Rounded.Hearing, contentDescription = null, tint = Color.Black)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("TEST WAKE WORD -> LIVE GEMINI VOICE", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                }
-            }
-        }
-
-        // Section 2: Gemini Incoming Call Voice Announcer
-        Text("SECTION 2 • GEMINI INCOMING CALL ANNOUNCER", color = TextSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
-        GlassCard(shape = RoundedCornerShape(20.dp), accentBorder = NeonPink, modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Incoming Call Voice Alert", color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                        Text("${settings.activePersonaName} ki asli Gemini voice mein call announce karegi", color = TextSecondary, fontSize = 11.sp)
-                    }
-                    Switch(checked = settings.callAnnouncerEnabled, onCheckedChange = onToggleCallAnnouncer)
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Speak Saved Caller Name", color = TextPrimary, fontSize = 13.sp)
-                        Text("Contacts se naam padh kar sunayegi", color = TextSecondary, fontSize = 11.sp)
-                    }
-                    Switch(checked = settings.announceCallerName, onCheckedChange = onToggleAnnounceCallerName)
-                }
-
-                Text("Announcement Tone", color = NeonCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    styles.forEach { st ->
-                        FilterChip(
-                            selected = settings.announcerStyle.equals(st, ignoreCase = true),
-                            onClick = { onSetAnnouncerStyle(st) },
-                            label = { Text(st, fontSize = 11.sp) }
-                        )
-                    }
-                }
-
-                Text("Repeat While Ringing", color = NeonCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf(1, 2, 3).forEach { count ->
-                        FilterChip(
-                            selected = settings.announcerRepeatCount == count,
-                            onClick = { onSetAnnouncerRepeat(count) },
-                            label = { Text("${count}x", fontSize = 11.sp) }
-                        )
-                    }
-                }
-
-                Button(
-                    onClick = onTestCallAnnouncement,
-                    shape = RoundedCornerShape(14.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = NeonPink),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(Icons.Rounded.Campaign, contentDescription = null)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("TEST GEMINI CALL VOICE", fontWeight = FontWeight.Bold)
-                }
-            }
-        }
-
-        // Section 3: Safe Gemini Notification Announcer & Security Shield
-        Text("SECTION 3 • SAFE NOTIFICATION READER & SECURITY SHIELD", color = TextSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
-        GlassCard(shape = RoundedCornerShape(20.dp), accentBorder = NeonPurple, modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("AI Notification Announcer", color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                        Text("Notifications ko real Gemini AI voice mein announce karegi", color = TextSecondary, fontSize = 11.sp)
-                    }
-                    Switch(checked = settings.notificationReaderEnabled, onCheckedChange = onToggleNotificationReader)
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Read Message Content Aloud", color = TextPrimary, fontSize = 13.sp)
-                        Text("ON: Message padh kar sunayegi | OFF: Sirf sender ka naam", color = TextSecondary, fontSize = 11.sp)
-                    }
-                    Switch(checked = settings.readNotificationContent, onCheckedChange = onToggleReadNotificationContent)
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                        Icon(Icons.Rounded.Security, contentDescription = null, tint = Color(0xFF34D399), modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Column {
-                            Text("OTP & Banking Security Blocker", color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                            Text("OTPs, Bank alerts & PINs kabhi read ya cloud par send nahi honge", color = TextSecondary, fontSize = 10.sp)
-                        }
-                    }
-                    Switch(checked = settings.blockSensitiveNotifications, onCheckedChange = onToggleBlockSensitive)
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                        Icon(Icons.Rounded.Lock, contentDescription = null, tint = NeonCyan, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Column {
-                            Text("Lock-Screen Privacy Guard", color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                            Text("Screen lock hone par message body chhupayega (sirf naam bolegi)", color = TextSecondary, fontSize = 10.sp)
-                        }
-                    }
-                    Switch(checked = settings.hideNotificationOnLockScreen, onCheckedChange = onToggleHideOnLockScreen)
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Trusted Apps Filter Only", color = TextPrimary, fontSize = 13.sp)
-                        Text("Sirf WhatsApp, Instagram, Telegram, SMS aur Gmail read karega", color = TextSecondary, fontSize = 10.sp)
-                    }
-                    Switch(checked = settings.trustedAppsOnly, onCheckedChange = onToggleTrustedAppsOnly)
-                }
-
-                Button(
-                    onClick = onTestNotificationAnnouncement,
-                    shape = RoundedCornerShape(14.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = NeonPurple),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(Icons.Rounded.MarkChatRead, contentDescription = null)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("TEST SAFE GEMINI NOTIFICATION", fontWeight = FontWeight.Bold)
-                }
-
-                uiState.lastAnnouncedEvent?.let { last ->
-                    GlassCard(shape = RoundedCornerShape(12.dp), accentBorder = NeonCyan, modifier = Modifier.fillMaxWidth()) {
-                        Column(modifier = Modifier.padding(10.dp)) {
-                            Text("LAST EVENT • ${last.category} • ${last.time}", color = NeonCyan, fontSize = 9.sp, fontWeight = FontWeight.Bold)
-                            Text("${last.title} — ${last.summary}", color = TextPrimary, fontSize = 11.sp)
-                        }
-                    }
-                }
-            }
-        }
-
-        // Section 4: Background Foreground Guard
-        Text("SECTION 4 • FOREGROUND SERVICES & SCREEN-OFF SHIELD", color = TextSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
-        GlassCard(shape = RoundedCornerShape(18.dp), accentBorder = NeonPurple, modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("24/7 Background Voice Guard", color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                        Text("Media & call aware wake-word aur safe alerts background mein active", color = TextSecondary, fontSize = 11.sp)
-                    }
-                    Switch(checked = settings.backgroundGuardEnabled, onCheckedChange = onToggleBackgroundGuard)
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Rounded.PhoneCallback, contentDescription = null, tint = NeonCyan, modifier = Modifier.size(15.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "Engine: Gemini Live Native Audio (${settings.voiceName}) • Zero TTS",
-                        color = NeonCyan,
-                        fontSize = 11.sp
-                    )
-                }
-            }
-        }
-
-        // Section 5: Required Permissions (6/6)
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "SECTION 5 • REQUIRED PERMISSIONS (${perms.grantedCount}/6)",
-                color = TextSecondary,
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 1.sp
-            )
-            if (!perms.allGranted) {
-                Text(
-                    text = "GRANT RUNTIME",
-                    color = NeonCyan,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.clickable { onRequestAllPermissions() }
-                )
-            }
-        }
-
-        GlassCard(shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                PermissionStatusRow(
-                    title = "Microphone (Wake Word & Live Voice)",
-                    granted = perms.micGranted,
-                    onGrantClick = onRequestAllPermissions
-                )
-                PermissionStatusRow(
-                    title = "Phone State & Call Privacy Lock",
-                    granted = perms.phoneStateGranted,
-                    onGrantClick = onRequestAllPermissions
-                )
-                PermissionStatusRow(
-                    title = "Contacts (Caller Name Lookup)",
-                    granted = perms.contactsGranted,
-                    onGrantClick = onRequestAllPermissions
-                )
-                PermissionStatusRow(
-                    title = "Notification Listener (Safe Reader)",
-                    granted = perms.notificationListenerGranted,
-                    onGrantClick = onRequestNotificationListener
-                )
-                PermissionStatusRow(
-                    title = "Foreground Service Notifications",
-                    granted = perms.notificationsGranted,
-                    onGrantClick = onRequestAllPermissions
-                )
-                PermissionStatusRow(
-                    title = "Unrestricted Battery (Screen-Off)",
-                    granted = perms.batteryUnrestricted,
-                    onGrantClick = onRequestBatteryExemption
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-    }
-}
-
-@Composable
-private fun PermissionStatusRow(
-    title: String,
-    granted: Boolean,
-    onGrantClick: () -> Unit
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-            Icon(
-                imageVector = if (granted) Icons.Rounded.CheckCircle else Icons.Rounded.Warning,
-                contentDescription = null,
-                tint = if (granted) Color(0xFF34D399) else Color(0xFFF59E0B),
-                modifier = Modifier.size(17.dp)
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(text = title, color = TextPrimary, fontSize = 12.sp)
-        }
-
-        if (granted) {
-            Text("ACTIVE", color = Color(0xFF34D399), fontSize = 10.sp, fontWeight = FontWeight.Bold)
-        } else {
-            GlassCard(
-                shape = RoundedCornerShape(10.dp),
-                accentBorder = NeonCyan,
-                modifier = Modifier.clickable { onGrantClick() }
-            ) {
-                Text(
-                    text = "ALLOW",
-                    color = NeonCyan,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun ToolsTab(
-    uiState: SuzyUiState,
-    transcripts: List<SavedTranscript>,
-    updateStatus: String,
-    onToggleFlashlight: () -> Unit,
-    onTestServerPing: () -> Unit,
-    onStartTimer: (Int) -> Unit,
-    onCancelTimer: () -> Unit,
-    onClearTranscripts: () -> Unit,
-    onCheckUpdate: () -> Unit,
-    onOpenSettings: () -> Unit
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text("JARVIS TOOLS & TELEMETRY", color = NeonCyan, fontSize = 15.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.4.sp)
-
-            GlassCard(shape = RoundedCornerShape(50), accentBorder = NeonCyan) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
-                ) {
-                    Icon(
-                        imageVector = if (uiState.isCharging) Icons.Rounded.BatteryChargingFull else Icons.Rounded.BatteryStd,
-                        contentDescription = "Battery",
-                        tint = if (uiState.isCharging) Color(0xFF34D399) else NeonCyan,
-                        modifier = Modifier.size(15.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = "${uiState.batteryPercent}%${if (uiState.isCharging) " CHG" else ""}",
-                        color = TextPrimary,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            }
-        }
-
-        if (uiState.toolFeedback.isNotBlank()) {
-            GlassCard(shape = RoundedCornerShape(12.dp), accentBorder = NeonPink, modifier = Modifier.fillMaxWidth()) {
-                Text(
-                    text = uiState.toolFeedback,
-                    color = TextPrimary,
-                    fontSize = 12.sp,
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
-                )
-            }
-        }
-
-        Text("SECTION 1 • HARDWARE & SERVER RADAR", color = TextSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            GlassCard(
-                shape = RoundedCornerShape(16.dp),
-                accentBorder = if (uiState.isFlashlightOn) NeonCyan else null,
-                modifier = Modifier
-                    .weight(1f)
-                    .height(58.dp)
-                    .clickable { onToggleFlashlight() }
-            ) {
-                Column(
-                    modifier = Modifier.fillMaxSize(),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
-                ) {
-                    Icon(
-                        imageVector = if (uiState.isFlashlightOn) Icons.Rounded.FlashlightOn else Icons.Rounded.FlashlightOff,
-                        contentDescription = "Flashlight",
-                        tint = if (uiState.isFlashlightOn) NeonCyan else TextPrimary,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.height(3.dp))
-                    Text(
-                        text = if (uiState.isFlashlightOn) "FLASH ON" else "FLASH OFF",
-                        color = TextPrimary,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 11.sp
-                    )
-                }
-            }
-
-            GlassCard(
-                shape = RoundedCornerShape(16.dp),
-                accentBorder = NeonCyan,
-                modifier = Modifier
-                    .weight(1f)
-                    .height(58.dp)
-                    .clickable { onTestServerPing() }
-            ) {
-                Column(
-                    modifier = Modifier.fillMaxSize(),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
-                ) {
-                    Icon(Icons.Rounded.Speed, contentDescription = "Ping", tint = NeonCyan, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.height(3.dp))
-                    Text(
-                        text = when {
-                            uiState.isPinging -> "PINGING..."
-                            uiState.pingMs != null -> "${uiState.pingMs} ms"
-                            else -> "PING TEST"
-                        },
-                        color = TextPrimary,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 11.sp
-                    )
-                }
-            }
-
-            GlassCard(
-                shape = RoundedCornerShape(16.dp),
-                accentBorder = NeonPurple,
-                modifier = Modifier
-                    .weight(1f)
-                    .height(58.dp)
-                    .clickable { onOpenSettings() }
-            ) {
-                Column(
-                    modifier = Modifier.fillMaxSize(),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
-                ) {
-                    Icon(Icons.Rounded.Settings, contentDescription = "Settings", tint = NeonPurple, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.height(3.dp))
-                    Text("AI CONFIG", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 11.sp)
-                }
-            }
-        }
-
-        Text("SECTION 2 • GEMINI VOICE COUNTDOWN TIMER", color = TextSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
-        GlassCard(shape = RoundedCornerShape(18.dp), accentBorder = if (uiState.isTimerRunning) NeonPink else NeonPurple, modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Rounded.Timer, contentDescription = null, tint = NeonPink, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = if (uiState.isTimerRunning) formatDuration(uiState.timerRemainingSec) else "Quick Focus / Nap Timer",
-                            color = TextPrimary,
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                    if (uiState.isTimerRunning) {
-                        Text(
-                            text = "CANCEL",
-                            color = Color(0xFFEF4444),
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.clickable { onCancelTimer() }
-                        )
-                    }
-                }
-
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf(1, 5, 15, 30).forEach { mins ->
-                        GlassCard(
-                            shape = RoundedCornerShape(12.dp),
-                            accentBorder = NeonCyan,
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(40.dp)
-                                .clickable { onStartTimer(mins) }
-                        ) {
-                            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                Text("${mins}m", color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Row {
+                                IconButton(onClick = { onTogglePin(mem.id) }, modifier = Modifier.size(30.dp)) {
+                                    Icon(Icons.Rounded.PushPin, contentDescription = "Pin", tint = if (mem.pinned) NeonPink else TextSecondary, modifier = Modifier.size(16.dp))
+                                }
+                                IconButton(onClick = { onDeleteMemory(mem.id) }, modifier = Modifier.size(30.dp)) {
+                                    Icon(Icons.Rounded.Delete, contentDescription = "Delete", tint = TextSecondary, modifier = Modifier.size(16.dp))
+                                }
                             }
                         }
                     }
                 }
             }
         }
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Rounded.History, contentDescription = null, tint = NeonPink, modifier = Modifier.size(14.dp))
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = "SECTION 3 • SAVED CALL HISTORY (${transcripts.size})",
-                    color = TextSecondary,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.sp
-                )
-            }
-            if (transcripts.isNotEmpty()) {
-                IconButton(onClick = onClearTranscripts, modifier = Modifier.size(28.dp)) {
-                    Icon(Icons.Rounded.DeleteSweep, contentDescription = "Clear History", tint = TextSecondary, modifier = Modifier.size(17.dp))
-                }
-            }
-        }
-
-        if (transcripts.isEmpty()) {
-            GlassCard(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
-                Text(
-                    text = "Call end karne par poori conversation history yahan save hogi.",
-                    color = TextSecondary,
-                    fontSize = 12.sp,
-                    modifier = Modifier.padding(14.dp)
-                )
-            }
-        } else {
-            transcripts.take(5).forEach { item ->
-                GlassCard(shape = RoundedCornerShape(16.dp), accentBorder = NeonPurple, modifier = Modifier.fillMaxWidth()) {
-                    Column(modifier = Modifier.padding(13.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(
-                                text = "${item.personaName.uppercase()}  •  ${item.durationLabel}",
-                                color = NeonPink,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(text = item.dateTime, color = TextSecondary, fontSize = 10.sp)
-                        }
-                        Spacer(modifier = Modifier.height(5.dp))
-                        Text(
-                            text = item.dialogue,
-                            color = TextPrimary,
-                            fontSize = 12.sp,
-                            lineHeight = 17.sp,
-                            maxLines = 6,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                }
-            }
-        }
-
-        Text("SECTION 4 • SYSTEM & UPDATES", color = TextSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
-        GlassCard(shape = RoundedCornerShape(20.dp), accentBorder = NeonPurple, modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text("Suzy AI v${BuildConfig.VERSION_NAME}", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = updateStatus.ifBlank { "GitHub Releases se direct in-app update check karein." },
-                    color = TextSecondary,
-                    fontSize = 12.sp
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-                Button(
-                    onClick = onCheckUpdate,
-                    shape = RoundedCornerShape(14.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = NeonPurple),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(Icons.Rounded.SystemUpdate, contentDescription = null)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("CHECK FOR UPDATE", fontWeight = FontWeight.Bold)
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
     }
 }

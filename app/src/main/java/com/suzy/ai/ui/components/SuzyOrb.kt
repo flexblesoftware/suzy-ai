@@ -1,23 +1,15 @@
 package com.suzy.ai.ui.components
 
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -32,7 +24,6 @@ import com.suzy.ai.ui.theme.NeonCyan
 import com.suzy.ai.ui.theme.NeonPink
 import com.suzy.ai.ui.theme.NeonPurple
 import com.suzy.ai.viewmodel.SuzyState
-import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
 
@@ -40,238 +31,192 @@ import kotlin.math.sin
 fun SuzyOrb(
     state: SuzyState,
     amplitude: Float,
-    modifier: Modifier = Modifier,
-    orbSize: Dp = 230.dp
+    orbSize: Dp = 230.dp,
+    orbStyle: String = "plasma",
+    primaryColor: Color = NeonPurple,
+    secondaryColor: Color = NeonCyan,
+    glowIntensity: Float = 1.0f,
+    spinSpeed: Float = 1.0f
 ) {
-    val smoothAmp by animateFloatAsState(
-        targetValue = amplitude.coerceIn(0f, 1f),
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessMediumLow
-        ),
-        label = "orb_amp"
-    )
+    val speedFactor = spinSpeed.coerceIn(0.25f, 2.5f)
+    val durationMs = (5200 / speedFactor).toInt().coerceAtLeast(1400)
 
-    val infinite = rememberInfiniteTransition(label = "orb_loop")
-
-    val primaryAngle by infinite.animateFloat(
+    val transition = rememberInfiniteTransition(label = "orb_transition")
+    val angle by transition.animateFloat(
         initialValue = 0f,
         targetValue = 360f,
         animationSpec = infiniteRepeatable(
-            animation = tween(
-                durationMillis = when (state) {
-                    SuzyState.SPEAKING -> 2600
-                    SuzyState.CONNECTING -> 1600
-                    SuzyState.LISTENING -> 4200
-                    else -> 7500
-                },
-                easing = LinearEasing
-            )
+            animation = tween(durationMs, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
         ),
-        label = "primary_rot"
+        label = "orb_angle"
     )
-
-    val secondaryAngle by infinite.animateFloat(
-        initialValue = 360f,
-        targetValue = 0f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 5800, easing = LinearEasing)
-        ),
-        label = "secondary_rot"
-    )
-
-    val breathe by infinite.animateFloat(
+    val breathe by transition.animateFloat(
         initialValue = 0.94f,
         targetValue = 1.06f,
         animationSpec = infiniteRepeatable(
-            animation = tween(2200, easing = FastOutSlowInEasing),
+            animation = tween(1800, easing = LinearEasing),
             repeatMode = RepeatMode.Reverse
         ),
         label = "orb_breathe"
     )
 
-    val primaryColor by animateColorAsState(
-        targetValue = when (state) {
-            SuzyState.SPEAKING -> NeonPink
-            SuzyState.LISTENING -> NeonCyan
-            SuzyState.CONNECTING -> Color(0xFF818CF8)
-            SuzyState.ERROR -> Color(0xFFEF4444)
-            SuzyState.IDLE -> NeonPurple
-        },
-        animationSpec = tween(450),
-        label = "primary_color"
-    )
+    val activeAccent = when (state) {
+        SuzyState.SPEAKING -> NeonPink
+        SuzyState.LISTENING -> secondaryColor
+        SuzyState.CONNECTING -> Color(0xFFF59E0B)
+        SuzyState.ERROR -> Color(0xFFEF4444)
+        SuzyState.IDLE -> primaryColor
+    }
 
-    val secondaryColor by animateColorAsState(
-        targetValue = when (state) {
-            SuzyState.SPEAKING -> NeonPurple
-            SuzyState.LISTENING -> Color(0xFF38BDF8)
-            SuzyState.CONNECTING -> NeonCyan
-            SuzyState.ERROR -> Color(0xFFF97316)
-            SuzyState.IDLE -> NeonPink
-        },
-        animationSpec = tween(450),
-        label = "secondary_color"
-    )
+    val ampBoost = (amplitude * 0.24f).coerceIn(0f, 0.28f)
+    val alphaBoost = (0.28f * glowIntensity).coerceIn(0.10f, 0.65f)
 
-    Box(
-        contentAlignment = Alignment.Center,
-        modifier = modifier.size(orbSize)
-    ) {
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val center = Offset(size.width / 2f, size.height / 2f)
-            val baseRadius = size.minDimension * 0.27f
-            val dynamicRadius = baseRadius * breathe + (smoothAmp * 20f)
+    Canvas(modifier = Modifier.size(orbSize)) {
+        val cx = size.width / 2f
+        val cy = size.height / 2f
+        val center = Offset(cx, cy)
+        val baseR = (size.minDimension / 2f) * 0.72f * (breathe + ampBoost)
 
-            // 1. Deep Ambient Outer Bloom
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colors = listOf(
-                        primaryColor.copy(alpha = 0.42f + smoothAmp * 0.25f),
-                        secondaryColor.copy(alpha = 0.18f),
-                        Color.Transparent
-                    ),
-                    center = center,
-                    radius = dynamicRadius * 2.1f
-                ),
-                radius = dynamicRadius * 2.1f,
-                center = center
-            )
+        // Outer ambient bloom
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(activeAccent.copy(alpha = alphaBoost), Color.Transparent),
+                center = center,
+                radius = baseR * 1.38f
+            ),
+            radius = baseR * 1.38f,
+            center = center
+        )
 
-            // 2. 36-Bar Audio-Reactive Waveform Halo
-            val barCount = 36
-            val haloRadius = dynamicRadius * 1.32f
-            for (i in 0 until barCount) {
-                val angleDeg = (i * (360f / barCount)) + (primaryAngle * 0.35f)
-                val angleRad = angleDeg * (PI / 180.0)
-                val waveFactor = (sin((i * 0.65) + (primaryAngle * 0.08)) + 1.0) * 0.5
-                val barLen = if (state == SuzyState.SPEAKING || state == SuzyState.LISTENING) {
-                    5f + (smoothAmp * 28f * waveFactor.toFloat())
-                } else {
-                    4f + (waveFactor.toFloat() * 4f)
+        when (orbStyle) {
+            "arc_reactor" -> {
+                // Jarvis Segmented Arc Reactor
+                drawCircle(color = Color(0xFF0A1024), radius = baseR * 0.95f, center = center)
+                rotate(angle, pivot = center) {
+                    for (i in 0 until 10) {
+                        drawArc(
+                            color = if (i % 2 == 0) secondaryColor else activeAccent,
+                            startAngle = i * 36f + 4f,
+                            sweepAngle = 24f,
+                            useCenter = false,
+                            topLeft = Offset(cx - baseR * 0.88f, cy - baseR * 0.88f),
+                            size = Size(baseR * 1.76f, baseR * 1.76f),
+                            style = Stroke(width = 7.dp.toPx(), cap = StrokeCap.Round)
+                        )
+                    }
                 }
-
-                val start = Offset(
-                    x = center.x + (cos(angleRad) * haloRadius).toFloat(),
-                    y = center.y + (sin(angleRad) * haloRadius).toFloat()
-                )
-                val end = Offset(
-                    x = center.x + (cos(angleRad) * (haloRadius + barLen)).toFloat(),
-                    y = center.y + (sin(angleRad) * (haloRadius + barLen)).toFloat()
-                )
-
-                drawLine(
-                    color = if (i % 2 == 0) primaryColor.copy(alpha = 0.78f) else secondaryColor.copy(alpha = 0.65f),
-                    start = start,
-                    end = end,
-                    strokeWidth = 3.2f,
-                    cap = StrokeCap.Round
-                )
-            }
-
-            // 3. Outer Counter-Rotating Neon Orbital Ring
-            rotate(degrees = primaryAngle, pivot = center) {
-                val ringRadius = dynamicRadius * 1.24f
-                drawArc(
-                    brush = Brush.sweepGradient(
-                        colors = listOf(
-                            Color.Transparent,
-                            primaryColor.copy(alpha = 0.85f),
-                            secondaryColor,
-                            Color.White.copy(alpha = 0.9f),
-                            Color.Transparent
-                        ),
-                        center = center
-                    ),
-                    startAngle = 0f,
-                    sweepAngle = 290f,
-                    useCenter = false,
-                    topLeft = Offset(center.x - ringRadius, center.y - ringRadius),
-                    size = Size(ringRadius * 2f, ringRadius * 2f),
-                    style = Stroke(width = 4f, cap = StrokeCap.Round)
-                )
-            }
-
-            // 4. Inner Counter-Rotating Plasma Ring
-            rotate(degrees = secondaryAngle, pivot = center) {
-                val innerRing = dynamicRadius * 1.11f
-                drawArc(
-                    brush = Brush.sweepGradient(
-                        colors = listOf(
-                            Color.Transparent,
-                            secondaryColor.copy(alpha = 0.75f),
-                            primaryColor,
-                            Color.Transparent
-                        ),
-                        center = center
-                    ),
-                    startAngle = 40f,
-                    sweepAngle = 220f,
-                    useCenter = false,
-                    topLeft = Offset(center.x - innerRing, center.y - innerRing),
-                    size = Size(innerRing * 2f, innerRing * 2f),
-                    style = Stroke(width = 2.8f, cap = StrokeCap.Round)
-                )
-            }
-
-            // 5. 3D Glass-Plasma Sphere Core
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colors = listOf(
-                        Color.White.copy(alpha = 0.92f),
-                        primaryColor.copy(alpha = 0.95f),
-                        secondaryColor.copy(alpha = 0.88f),
-                        Color(0xFF0A061A)
-                    ),
-                    center = Offset(center.x - dynamicRadius * 0.25f, center.y - dynamicRadius * 0.28f),
-                    radius = dynamicRadius * 1.25f
-                ),
-                radius = dynamicRadius,
-                center = center
-            )
-
-            // 6. Internal Swirling Energy Core
-            rotate(degrees = primaryAngle * 1.4f, pivot = center) {
+                rotate(-angle * 1.4f, pivot = center) {
+                    drawCircle(
+                        color = primaryColor.copy(alpha = 0.85f),
+                        radius = baseR * 0.56f,
+                        center = center,
+                        style = Stroke(width = 3.dp.toPx())
+                    )
+                }
                 drawCircle(
-                    brush = Brush.sweepGradient(
-                        colors = listOf(
-                            Color.Transparent,
-                            Color.White.copy(alpha = 0.22f + smoothAmp * 0.25f),
-                            primaryColor.copy(alpha = 0.45f),
-                            Color.Transparent
-                        ),
-                        center = center
-                    ),
-                    radius = dynamicRadius * 0.82f,
+                    brush = Brush.radialGradient(listOf(Color.White, secondaryColor, Color.Transparent)),
+                    radius = baseR * 0.36f,
                     center = center
                 )
             }
 
-            // 7. Glossy Glass Rim & Specular Highlight
-            drawCircle(
-                brush = Brush.linearGradient(
-                    colors = listOf(
-                        Color.White.copy(alpha = 0.65f),
-                        Color.Transparent,
-                        primaryColor.copy(alpha = 0.5f)
-                    ),
-                    start = Offset(center.x - dynamicRadius, center.y - dynamicRadius),
-                    end = Offset(center.x + dynamicRadius, center.y + dynamicRadius)
-                ),
-                radius = dynamicRadius,
-                center = center,
-                style = Stroke(width = 2f)
-            )
+            "quantum_rings" -> {
+                // Gyroscope Orbital Rings
+                for (ring in 1..4) {
+                    val r = baseR * (0.35f + ring * 0.16f)
+                    rotate(angle * (if (ring % 2 == 0) 1f else -1.2f) + ring * 30f, pivot = center) {
+                        drawArc(
+                            brush = Brush.sweepGradient(listOf(primaryColor, secondaryColor, activeAccent, primaryColor)),
+                            startAngle = 0f,
+                            sweepAngle = 270f,
+                            useCenter = false,
+                            topLeft = Offset(cx - r, cy - r),
+                            size = Size(r * 2f, r * 2f),
+                            style = Stroke(width = 3.5.dp.toPx(), cap = StrokeCap.Round)
+                        )
+                    }
+                }
+                drawCircle(color = activeAccent, radius = baseR * 0.24f, center = center)
+            }
 
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colors = listOf(Color.White.copy(alpha = 0.55f), Color.Transparent),
-                    center = Offset(center.x - dynamicRadius * 0.34f, center.y - dynamicRadius * 0.36f),
-                    radius = dynamicRadius * 0.38f
-                ),
-                radius = dynamicRadius * 0.38f,
-                center = Offset(center.x - dynamicRadius * 0.34f, center.y - dynamicRadius * 0.36f)
-            )
+            "solar_eclipse" -> {
+                // Dark core with fiery corona
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(Color(0xFFF59E0B).copy(alpha = 0.65f), activeAccent.copy(alpha = 0.25f), Color.Transparent),
+                        center = center,
+                        radius = baseR * 1.25f
+                    ),
+                    radius = baseR * 1.25f,
+                    center = center
+                )
+                drawCircle(color = Color(0xFF04040A), radius = baseR * 0.72f, center = center)
+                drawCircle(
+                    color = Color(0xFFFBBF24),
+                    radius = baseR * 0.73f,
+                    center = center,
+                    style = Stroke(width = 3.dp.toPx())
+                )
+            }
+
+            "cyber_dna" -> {
+                // Audio-reactive radial equalizer bars
+                val bars = 32
+                for (i in 0 until bars) {
+                    val deg = (i * (360f / bars)) + angle
+                    val rad = Math.toRadians(deg.toDouble())
+                    val wave = (sin(Math.toRadians((i * 25 + angle * 2).toDouble())).toFloat() * 0.5f + 0.5f)
+                    val inner = baseR * 0.52f
+                    val outer = baseR * (0.68f + wave * 0.34f + ampBoost)
+                    drawLine(
+                        color = if (i % 2 == 0) secondaryColor else activeAccent,
+                        start = Offset(cx + cos(rad).toFloat() * inner, cy + sin(rad).toFloat() * inner),
+                        end = Offset(cx + cos(rad).toFloat() * outer, cy + sin(rad).toFloat() * outer),
+                        strokeWidth = 3.dp.toPx(),
+                        cap = StrokeCap.Round
+                    )
+                }
+                drawCircle(color = primaryColor.copy(alpha = 0.45f), radius = baseR * 0.44f, center = center)
+            }
+
+            "breathing_halo" -> {
+                // Minimalist Zen Halo
+                drawCircle(
+                    brush = Brush.sweepGradient(listOf(primaryColor, secondaryColor, activeAccent, primaryColor)),
+                    radius = baseR * 0.82f,
+                    center = center,
+                    style = Stroke(width = 5.dp.toPx())
+                )
+            }
+
+            else -> {
+                // Classic Multi-Layer Plasma Sphere
+                rotate(angle, pivot = center) {
+                    drawCircle(
+                        brush = Brush.sweepGradient(
+                            colors = listOf(primaryColor, secondaryColor, activeAccent, primaryColor)
+                        ),
+                        radius = baseR * 0.92f,
+                        center = center,
+                        style = Stroke(width = 4.dp.toPx())
+                    )
+                }
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            Color.White.copy(alpha = 0.85f),
+                            activeAccent.copy(alpha = 0.72f),
+                            primaryColor.copy(alpha = 0.42f),
+                            Color.Transparent
+                        ),
+                        center = center,
+                        radius = baseR * 0.82f
+                    ),
+                    radius = baseR * 0.82f,
+                    center = center
+                )
+            }
         }
     }
 }

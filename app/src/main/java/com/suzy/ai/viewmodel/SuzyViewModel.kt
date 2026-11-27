@@ -1,17 +1,34 @@
 package com.suzy.ai.viewmodel
 
 import android.app.Application
+import android.content.Context
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
+import android.os.StatFs
+import android.os.Environment
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.suzy.ai.audio.AudioBlockReason
 import com.suzy.ai.audio.AudioEngine
+import com.suzy.ai.brain.OmniCommandRouter
+import com.suzy.ai.data.AutomationRuleItem
+import com.suzy.ai.data.ChatMessageItem
+import com.suzy.ai.data.FinanceEntryItem
+import com.suzy.ai.data.HabitEntryItem
 import com.suzy.ai.data.MemoryItem
 import com.suzy.ai.data.MoodOption
+import com.suzy.ai.data.NoteVaultItem
+import com.suzy.ai.data.OmniVaultRepository
 import com.suzy.ai.data.PersonaProfile
+import com.suzy.ai.data.PlannerTaskItem
 import com.suzy.ai.data.SavedTranscript
+import com.suzy.ai.data.SecurityAuditItem
 import com.suzy.ai.data.SettingsRepository
 import com.suzy.ai.data.SuzyCatalog
 import com.suzy.ai.data.SuzySettings
+import com.suzy.ai.network.GeminiChatClient
 import com.suzy.ai.network.GeminiLiveClient
 import com.suzy.ai.service.AnnouncedEventRecord
 import com.suzy.ai.service.AnnouncerStateBridge
@@ -35,6 +52,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.UUID
+import kotlin.math.sqrt
 
 enum class SuzyState {
     IDLE,
@@ -46,7 +64,7 @@ enum class SuzyState {
 
 data class SuzyUiState(
     val state: SuzyState = SuzyState.IDLE,
-    val statusText: String = "Say \"Hey Suzy\" or Tap Start Call",
+    val statusText: String = "Say "Hey Suzy" or Tap Start Call",
     val liveCaption: String = "",
     val lastCaption: String = "",
     val amplitude: Float = 0f,
@@ -65,15 +83,19 @@ data class SuzyUiState(
     val audioBlockReason: AudioBlockReason = AudioBlockReason.NONE,
     val lastAnnouncedEvent: AnnouncedEventRecord? = null,
     val permissions: AppPermissionsStatus = AppPermissionsStatus(),
-    val toolFeedback: String = ""
+    val toolFeedback: String = "",
+    val isChatSending: Boolean = false,
+    val pendingNavigationRoute: String? = null
 )
 
-class SuzyViewModel(application: Application) : AndroidViewModel(application) {
+class SuzyViewModel(application: Application) : AndroidViewModel(application), SensorEventListener {
 
     private val appContext = application.applicationContext
     private val repo = SettingsRepository(appContext)
+    private val omniRepo = OmniVaultRepository(appContext)
     private val audioEngine = AudioEngine(appContext, viewModelScope)
     private val suzyTools = SuzyTools(appContext)
+    private val sensorManager = appContext.getSystemService(Context.SENSOR_SERVICE) as? SensorManager
 
     val settings: StateFlow<SuzySettings> = repo.settingsFlow.stateIn(
         scope = viewModelScope,
@@ -99,6 +121,60 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
         initialValue = emptyList()
     )
 
+    val chatMessages: StateFlow<List<ChatMessageItem>> = omniRepo.chatMessagesFlow.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.Eagerly,
+        initialValue = emptyList()
+    )
+
+    val tasks: StateFlow<List<PlannerTaskItem>> = omniRepo.tasksFlow.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.Eagerly,
+        initialValue = emptyList()
+    )
+
+    val financeEntries: StateFlow<List<FinanceEntryItem>> = omniRepo.financeFlow.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.Eagerly,
+        initialValue = emptyList()
+    )
+
+    val habits: StateFlow<List<HabitEntryItem>> = omniRepo.habitsFlow.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.Eagerly,
+        initialValue = emptyList()
+    )
+
+    val notes: StateFlow<List<NoteVaultItem>> = omniRepo.notesFlow.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.Eagerly,
+        initialValue = emptyList()
+    )
+
+    val rules: StateFlow<List<AutomationRuleItem>> = omniRepo.rulesFlow.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.Eagerly,
+        initialValue = emptyList()
+    )
+
+    val securityLogs: StateFlow<List<SecurityAuditItem>> = omniRepo.securityAuditFlow.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.Eagerly,
+        initialValue = emptyList()
+    )
+
+    val parkingNote: StateFlow<String> = omniRepo.parkingNoteFlow.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.Eagerly,
+        initialValue = ""
+    )
+
+    val medicalId: StateFlow<String> = omniRepo.medicalIdFlow.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.Eagerly,
+        initialValue = ""
+    )
+
     private val _uiState = MutableStateFlow(SuzyUiState())
     val uiState: StateFlow<SuzyUiState> = _uiState.asStateFlow()
 
@@ -115,6 +191,8 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
     private var countdownJob: Job? = null
     private var sessionStartMillis: Long = 0L
     private val sessionTurnLines = mutableListOf<String>()
+    private var lastShakeTimestampMs: Long = 0L
+    private var wasFaceDown: Boolean = false
 
     init {
         CallServiceBridge.onToggleMuteRequested = { toggleMute() }
@@ -137,7 +215,6 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
             refreshGuardAndPermissions()
         }
 
-        // Completely release mic & suspend active Suzy session when user answers a phone/VoIP call
         AnnouncerStateBridge.onPhoneCallOffhookSuspendLiveSession = {
             if (isSessionActive()) {
                 stopSessionInternal(statusOverride = "Paused during phone call (Privacy Shield)")
@@ -160,18 +237,276 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
         AnnouncerStateBridge.onWakeWordDetected = { trailingQuery ->
             if (!isSessionActive() && AnnouncerStateBridge.audioBlockReason == AudioBlockReason.NONE) {
                 val activeName = settings.value.activePersonaName
+                if (trailingQuery.isNotBlank()) {
+                    executeOmniCommand(trailingQuery, speakResponse = false)
+                }
                 val wakePrompt = if (trailingQuery.isNotBlank()) {
                     "User ne abhi wake word bol kar tumhe bulaya aur kaha: '$trailingQuery'. Apne natural Hinglish style mein turant jawab do!"
                 } else {
-                    "User ne abhi 'Hey $activeName' bol kar tumhe awaz di hai! Pyaar se turant 1 chhoti cute line mein bolo 'Haan bolo jaan, main sun rahi hoon!'"
+                    "User ne abhi '${settings.value.customWakePhrase}' bol kar tumhe awaz di hai! Pyaar se turant 1 chhoti cute line mein bolo 'Haan bolo ${settings.value.ownerNickname}, main sun rahi hoon!'"
                 }
                 startSession(initialWakePrompt = wakePrompt)
             }
             refreshGuardAndPermissions()
         }
 
+        registerHardwareSensors()
         refreshDeviceTelemetry()
         refreshGuardAndPermissions()
+    }
+
+    private fun registerHardwareSensors() {
+        try {
+            sensorManager?.getDefaultSensor(Sensor.TYPE_PROXIMITY)?.let { prox ->
+                sensorManager.registerListener(this, prox, SensorManager.SENSOR_DELAY_NORMAL)
+            }
+            sensorManager?.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)?.let { acc ->
+                sensorManager.registerListener(this, acc, SensorManager.SENSOR_DELAY_UI)
+            }
+        } catch (_: Exception) {
+        }
+    }
+
+    override fun onSensorChanged(event: SensorEvent?) {
+        val ev = event ?: return
+        val s = settings.value
+
+        if (ev.sensor.type == Sensor.TYPE_PROXIMITY && s.proximityEarRoutingEnabled && isSessionActive()) {
+            val distance = ev.values[0]
+            val nearEar = distance < ev.sensor.maximumRange && distance < 4f
+            if (nearEar && _uiState.value.isSpeakerOn) {
+                audioEngine.setSpeakerphone(false)
+                _uiState.update { it.copy(isSpeakerOn = false) }
+            } else if (!nearEar && !_uiState.value.isSpeakerOn) {
+                audioEngine.setSpeakerphone(true)
+                _uiState.update { it.copy(isSpeakerOn = true) }
+            }
+        } else if (ev.sensor.type == Sensor.TYPE_ACCELEROMETER) {
+            val x = ev.values[0]
+            val y = ev.values[1]
+            val z = ev.values[2]
+
+            // Flip face-down to mute during active call
+            if (s.flipToMuteEnabled && isSessionActive()) {
+                val isFaceDownNow = z < -8.2f
+                if (isFaceDownNow && !wasFaceDown && !_uiState.value.isMuted) {
+                    toggleMute()
+                }
+                wasFaceDown = isFaceDownNow
+            }
+
+            // Double-shake to toggle live call
+            if (s.shakeToCallEnabled) {
+                val gForce = sqrt(x * x + y * y + z * z) / SensorManager.GRAVITY_EARTH
+                val now = System.currentTimeMillis()
+                if (gForce > 2.65f && (now - lastShakeTimestampMs) > 2200L) {
+                    lastShakeTimestampMs = now
+                    if (isSessionActive()) stopSession() else startSession()
+                }
+            }
+        }
+    }
+
+    override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+
+    fun consumeNavigationRoute() {
+        _uiState.update { it.copy(pendingNavigationRoute = null) }
+    }
+
+    fun executeOmniCommand(rawCommand: String, speakResponse: Boolean = true): String {
+        val outcome = OmniCommandRouter.processCommandChain(
+            context = appContext,
+            rawInput = rawCommand,
+            currentSettings = settings.value,
+            isOwnerVerified = !settings.value.ownerModeStrict || settings.value.ownerVoiceEnrolled
+        )
+        if (!outcome.handled) return ""
+
+        viewModelScope.launch {
+            outcome.securityBlockedReason?.let { reason ->
+                omniRepo.logSecurityEvent(rawCommand, "BLOCKED", reason)
+                if (speakResponse) {
+                    speakTextInGeminiVoice("Sorry, yeh command Owner Security Lock se protected hai. Pehle Owner Passphrase ya PIN verify karo.")
+                }
+            }
+
+            outcome.updatedSettings?.let { newSet ->
+                repo.saveSettings(newSet)
+                hotReloadIfActive(newSet)
+            }
+
+            outcome.addMemoryPair?.let { (cat, fact) ->
+                repo.addMemory(cat, fact, pinned = true)
+            }
+
+            outcome.addTaskTitle?.let { title ->
+                omniRepo.addTask(title)
+            }
+
+            outcome.addFinanceEntry?.let { (kind, title, amt) ->
+                omniRepo.addFinanceEntry(kind, title, title, amt)
+            }
+
+            outcome.addShoppingItem?.let { item ->
+                omniRepo.addNoteItem("SHOPPING", item, "Added by command")
+            }
+
+            outcome.saveParkingText?.let { spot ->
+                omniRepo.saveParkingSpot(spot)
+            }
+
+            outcome.startTimerMinutes?.let { mins ->
+                startCountdownTimer(mins)
+            }
+
+            outcome.toggleTorch?.let { on ->
+                val res = suzyTools.toggleFlashlight(on)
+                _uiState.update { it.copy(isFlashlightOn = suzyTools.isTorchOn, toolFeedback = res) }
+            }
+
+            if (outcome.triggerStealthLock && isSessionActive()) {
+                stopSessionInternal("Stealth Panic Lock Active")
+            }
+
+            if (outcome.triggerBossBriefing) {
+                val brief = buildLiveBossBriefingText()
+                _uiState.update { it.copy(toolFeedback = brief) }
+                if (speakResponse) speakTextInGeminiVoice(brief)
+            } else if (speakResponse && outcome.securityBlockedReason == null && outcome.summary.isNotBlank()) {
+                speakTextInGeminiVoice("Done ${settings.value.ownerNickname}! ${outcome.summary}")
+            }
+
+            _uiState.update {
+                it.copy(
+                    toolFeedback = outcome.summary,
+                    pendingNavigationRoute = outcome.navigateToRoute ?: it.pendingNavigationRoute
+                )
+            }
+        }
+        return outcome.summary
+    }
+
+    private fun buildLiveBossBriefingText(): String {
+        val s = settings.value
+        val bat = suzyTools.getBatteryTelemetry()
+        val pendingTasks = tasks.value.count { !it.completed }
+        val totalExpense = financeEntries.value.filter { it.kind == "EXPENSE" }.sumOf { it.amountInr }.toInt()
+        val stat = StatFs(Environment.getDataDirectory().path)
+        val freeGb = String.format(Locale.US, "%.1f", stat.availableBytes / (1024.0 * 1024.0 * 1024.0))
+        return "Good day ${s.ownerNickname}! Battery ${bat.percent}% hai, $pendingTasks tasks pending hain, aaj ka expense ₹$totalExpense hai, aur phone mein $freeGb GB storage khaali hai."
+    }
+
+    fun sendChatMessage(text: String, imageBase64: String? = null, attachmentLabel: String = "") {
+        val cleanText = text.trim()
+        if (cleanText.isBlank() && imageBase64 == null) return
+
+        val currentSet = settings.value
+        val executedSummary = executeOmniCommand(cleanText, speakResponse = false)
+
+        viewModelScope.launch {
+            omniRepo.appendChatMessage(
+                role = "user",
+                personaName = currentSet.ownerName,
+                text = cleanText,
+                attachmentLabel = attachmentLabel,
+                commandExecuted = executedSummary
+            )
+            _uiState.update { it.copy(isChatSending = true) }
+
+            val enriched = buildEnrichedSettings(currentSet)
+            val result = GeminiChatClient.sendMessage(
+                settings = currentSet,
+                systemInstruction = enriched.systemPrompt,
+                history = chatMessages.value,
+                userMessage = if (executedSummary.isNotBlank()) {
+                    "$cleanText
+[SYSTEM NOTE: App already executed: $executedSummary. Confirm naturally in your persona style.]"
+                } else cleanText,
+                imageBase64 = imageBase64
+            )
+
+            _uiState.update { it.copy(isChatSending = false) }
+            result.fold(
+                onSuccess = { reply ->
+                    omniRepo.appendChatMessage(
+                        role = "model",
+                        personaName = currentSet.activePersonaName,
+                        text = reply,
+                        commandExecuted = executedSummary
+                    )
+                },
+                onFailure = { err ->
+                    val fallback = if (executedSummary.isNotBlank()) {
+                        "Command execute ho gaya (${executedSummary}), lekin AI text server se connect nahi ho paya: ${err.message}"
+                    } else {
+                        "Connection issue: ${err.message}. Kripya Settings mein Gemini API Key check karein."
+                    }
+                    omniRepo.appendChatMessage(
+                        role = "model",
+                        personaName = currentSet.activePersonaName,
+                        text = fallback
+                    )
+                }
+            )
+        }
+    }
+
+    fun speakTextInGeminiVoice(textToSpeak: String) {
+        val personaName = settings.value.activePersonaName
+        CallAnnouncerService.triggerGeminiVoiceAlert(
+            context = appContext,
+            category = "GEMINI VOICE",
+            title = personaName,
+            prompt = "Tum $personaName ho. Yeh message apne natural Hinglish persona andaaz mein padh kar sunao: "$textToSpeak""
+        )
+    }
+
+    fun clearChatHistory() {
+        viewModelScope.launch { omniRepo.clearChatHistory() }
+    }
+
+    fun addPlannerTask(title: String) {
+        viewModelScope.launch { omniRepo.addTask(title) }
+    }
+
+    fun togglePlannerTask(id: String) {
+        viewModelScope.launch { omniRepo.toggleTask(id) }
+    }
+
+    fun addFinanceEntry(kind: String, title: String, personOrCat: String, amount: Double) {
+        viewModelScope.launch { omniRepo.addFinanceEntry(kind, title, personOrCat, amount) }
+    }
+
+    fun toggleFinanceSettled(id: String) {
+        viewModelScope.launch { omniRepo.toggleFinanceSettled(id) }
+    }
+
+    fun toggleHabit(id: String) {
+        viewModelScope.launch { omniRepo.toggleHabit(id) }
+    }
+
+    fun addHabit(name: String) {
+        viewModelScope.launch { omniRepo.addHabit(name) }
+    }
+
+    fun addNoteItem(kind: String, title: String, body: String) {
+        viewModelScope.launch { omniRepo.addNoteItem(kind, title, body) }
+    }
+
+    fun toggleNoteChecked(id: String) {
+        viewModelScope.launch { omniRepo.toggleNoteChecked(id) }
+    }
+
+    fun addAutomationRule(kind: String, trigger: String, summary: String, target: String) {
+        viewModelScope.launch { omniRepo.addAutomationRule(kind, trigger, summary, target) }
+    }
+
+    fun saveParkingSpot(spot: String) {
+        viewModelScope.launch { omniRepo.saveParkingSpot(spot) }
+    }
+
+    fun saveMedicalId(info: String) {
+        viewModelScope.launch { omniRepo.saveMedicalId(info) }
     }
 
     fun refreshGuardAndPermissions() {
@@ -284,19 +619,37 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
     private fun buildEnrichedSettings(base: SuzySettings): SuzySettings {
         val hardcodedBasePrompt = SuzyCatalog.resolveHardcodedPrompt(base.activePersonaName, base.systemPrompt)
         val mood = SuzyCatalog.moods.firstOrNull { it.id == base.activeMoodId }
-        val savedMemories = memories.value
+        val savedMemories = if (base.guestModeActive) emptyList() else memories.value
 
         val promptBuilder = StringBuilder(hardcodedBasePrompt.trim())
+        promptBuilder.append("
+
+[OWNER & APP SELF-AWARENESS]:")
+        promptBuilder.append("
+- Owner Name: ${base.ownerName} (Title: ${base.ownerNickname})")
+        promptBuilder.append("
+- Current Persona: ${base.activePersonaName} | Voice: ${base.voiceName} | ORB Style: ${base.orbStyle} | Theme: ${base.uiThemeSkin}")
+        promptBuilder.append("
+- Bond XP: ${base.bondXp} | Streak: ${base.streakDays} days | Trust Score: ${base.trustScore}/100 | Narazgi/Anger Level: ${base.angerLevel}%")
+        if (base.angerLevel >= 40) {
+            promptBuilder.append("
+- [ATTITUDE ALERT]: Tum abhi user se ${base.angerLevel}% naraz ho. Chhote, teekhe jawab do jab tak user sorry bol kar mana na le (kabhi gaali mat dena).")
+        }
         if (base.customNote.isNotBlank()) {
-            promptBuilder.append("\n\n[USER PERSONAL INSTRUCTION]: ${base.customNote.trim()}")
+            promptBuilder.append("
+- [OWNER PERSONAL INSTRUCTION]: ${base.customNote.trim()}")
         }
         if (mood != null) {
-            promptBuilder.append("\n\n[CURRENT LIVE MOOD - ${mood.label}]: ${mood.instruction}")
+            promptBuilder.append("
+- [CURRENT LIVE MOOD - ${mood.label}]: ${mood.instruction}")
         }
         if (savedMemories.isNotEmpty()) {
-            promptBuilder.append("\n\n[USER PERSONAL MEMORY VAULT - Hamesha yaad rakho aur naturally baat mein use karo]:")
-            savedMemories.take(25).forEach { mem ->
-                promptBuilder.append("\n- (${mem.category}) ${mem.content}")
+            promptBuilder.append("
+
+[PERMANENT MEMORY VAULT - Hamesha yaad rakho aur naturally baat mein use karo]:")
+            savedMemories.take(30).forEach { mem ->
+                promptBuilder.append("
+- (${mem.category}) ${mem.content}")
             }
         }
         return base.copy(systemPrompt = promptBuilder.toString())
@@ -321,10 +674,13 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
             personaName = personaName,
             dateTime = dateStr,
             durationLabel = durationStr,
-            dialogue = linesSnapshot.joinToString("\n")
+            dialogue = linesSnapshot.joinToString("
+")
         )
         viewModelScope.launch {
             repo.saveTranscript(item)
+            val xpGain = (elapsedSec / 10L).toInt().coerceIn(5, 80)
+            repo.saveSettings(settings.value.copy(bondXp = settings.value.bondXp + xpGain))
         }
     }
 
@@ -399,7 +755,9 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
             },
             onToolCall = { callId: String, name: String, args: JSONObject ->
                 if (gen != sessionGeneration) return@GeminiLiveClient
-                val result = suzyTools.executeTool(name, args)
+                val queryArg = args.optString("query").ifBlank { args.optString("command") }
+                val omniResult = if (queryArg.isNotBlank()) executeOmniCommand(queryArg, speakResponse = false) else ""
+                val result = omniResult.ifBlank { suzyTools.executeTool(name, args) }
                 refreshDeviceTelemetry()
                 _uiState.update { it.copy(toolFeedback = result) }
                 liveClient?.sendToolResponse(callId, name, result)
@@ -456,7 +814,7 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
                     if (cur.state != SuzyState.ERROR) {
                         cur.copy(
                             state = SuzyState.IDLE,
-                            statusText = "Say \"Hey ${settings.value.activePersonaName}\" or Tap Start Call",
+                            statusText = "Say "${settings.value.customWakePhrase}" or Tap Start Call",
                             amplitude = 0f
                         )
                     } else cur
@@ -479,9 +837,10 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         val baseSettings = customSettings ?: settings.value
-        if (baseSettings.apiKey.isBlank()) {
+        val activeKey = baseSettings.apiKey.ifBlank { baseSettings.backupApiKey }
+        if (activeKey.isBlank()) {
             _uiState.update {
-                it.copy(state = SuzyState.ERROR, statusText = "Pehle AI Config mein Gemini API Key daalo")
+                it.copy(state = SuzyState.ERROR, statusText = "Pehle Settings Studio mein Gemini API Key daalo")
             }
             return
         }
@@ -493,7 +852,7 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
         liveClient?.disconnect()
         audioEngine.flushPlayback()
 
-        val enrichedSettings = buildEnrichedSettings(baseSettings)
+        val enrichedSettings = buildEnrichedSettings(baseSettings.copy(apiKey = activeKey))
         _uiState.update {
             it.copy(
                 state = SuzyState.CONNECTING,
@@ -516,7 +875,7 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
 
     fun stopSession() {
         stopSessionInternal(
-            statusOverride = "Say \"Hey ${settings.value.activePersonaName}\" or Tap Start Call"
+            statusOverride = "Say "${settings.value.customWakePhrase}" or Tap Start Call"
         )
     }
 
@@ -574,10 +933,11 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
         role: String,
         voiceName: String,
         accentHex: Long,
-        prompt: String
+        prompt: String,
+        gender: String = "Female"
     ) {
         viewModelScope.launch {
-            val created = repo.saveCustomPersona(name, role, voiceName, accentHex, prompt)
+            val created = repo.saveCustomPersona(name, role, voiceName, accentHex, prompt, gender)
             if (created != null) {
                 val updated = settings.value.copy(
                     activePersonaName = created.name,
@@ -592,9 +952,7 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun deleteCustomPersona(id: String) {
-        viewModelScope.launch {
-            repo.deleteCustomPersona(id)
-        }
+        viewModelScope.launch { repo.deleteCustomPersona(id) }
     }
 
     fun selectMood(mood: MoodOption) {
@@ -603,7 +961,7 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
             repo.saveSettings(updated)
             if (isSessionActive()) {
                 liveClient?.sendReactionPrompt(
-                    "Apna mood turant '${mood.label}' par shift karo: ${mood.instruction} Isi mood mein 1 chhoti cute line bolo."
+                    "Apna mood turant '${mood.label}' par shift karo: ${mood.instruction} Isi mood mein 1 chhoti line bolo."
                 )
             }
         }
@@ -619,22 +977,14 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
 
     fun toggleCaptions() {
         val updated = settings.value.copy(captionsEnabled = !settings.value.captionsEnabled)
-        viewModelScope.launch {
-            repo.saveSettings(updated)
-        }
+        viewModelScope.launch { repo.saveSettings(updated) }
     }
 
     fun toggleWakeWord(enabled: Boolean) {
         val updated = settings.value.copy(wakeWordEnabled = enabled)
         viewModelScope.launch {
             repo.saveSettings(updated)
-            if (enabled) {
-                syncBackgroundGuard(true)
-            } else {
-                CallAnnouncerService.syncWakeWordState(appContext)
-                delay(250L)
-                refreshGuardAndPermissions()
-            }
+            if (enabled) syncBackgroundGuard(true) else CallAnnouncerService.syncWakeWordState(appContext)
         }
     }
 
@@ -643,8 +993,6 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             repo.saveSettings(updated)
             CallAnnouncerService.syncWakeWordState(appContext)
-            delay(250L)
-            refreshGuardAndPermissions()
         }
     }
 
@@ -653,13 +1001,7 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             repo.saveSettings(updated)
             CallAnnouncerService.syncWakeWordState(appContext)
-            delay(250L)
-            refreshGuardAndPermissions()
         }
-    }
-
-    fun triggerTestWakeWord() {
-        CallAnnouncerService.triggerTestWakeWord(appContext)
     }
 
     fun toggleCallAnnouncer(enabled: Boolean) {
@@ -667,27 +1009,6 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             repo.saveSettings(updated)
             if (enabled) syncBackgroundGuard(true)
-        }
-    }
-
-    fun toggleAnnounceCallerName(enabled: Boolean) {
-        val updated = settings.value.copy(announceCallerName = enabled)
-        viewModelScope.launch {
-            repo.saveSettings(updated)
-        }
-    }
-
-    fun setAnnouncerRepeat(count: Int) {
-        val updated = settings.value.copy(announcerRepeatCount = count.coerceIn(1, 3))
-        viewModelScope.launch {
-            repo.saveSettings(updated)
-        }
-    }
-
-    fun setAnnouncerStyle(style: String) {
-        val updated = settings.value.copy(announcerStyle = style)
-        viewModelScope.launch {
-            repo.saveSettings(updated)
         }
     }
 
@@ -699,56 +1020,12 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun toggleReadNotificationContent(enabled: Boolean) {
-        val updated = settings.value.copy(readNotificationContent = enabled)
-        viewModelScope.launch {
-            repo.saveSettings(updated)
-        }
-    }
-
-    fun toggleBlockSensitiveNotifications(enabled: Boolean) {
-        val updated = settings.value.copy(blockSensitiveNotifications = enabled)
-        viewModelScope.launch {
-            repo.saveSettings(updated)
-        }
-    }
-
-    fun toggleHideNotificationOnLockScreen(enabled: Boolean) {
-        val updated = settings.value.copy(hideNotificationOnLockScreen = enabled)
-        viewModelScope.launch {
-            repo.saveSettings(updated)
-        }
-    }
-
-    fun toggleTrustedAppsOnly(enabled: Boolean) {
-        val updated = settings.value.copy(trustedAppsOnly = enabled)
-        viewModelScope.launch {
-            repo.saveSettings(updated)
-        }
-    }
-
-    fun toggleBackgroundGuard(enabled: Boolean) {
-        val updated = settings.value.copy(backgroundGuardEnabled = enabled)
-        viewModelScope.launch {
-            repo.saveSettings(updated)
-            syncBackgroundGuard(enabled)
-        }
-    }
-
     fun triggerTestCallAnnouncement() {
         CallAnnouncerService.triggerTestCallAnnouncement(appContext)
-        viewModelScope.launch {
-            delay(600L)
-            refreshGuardAndPermissions()
-        }
     }
 
     fun triggerTestNotificationAnnouncement() {
         CallAnnouncerService.triggerTestNotificationAnnouncement(appContext)
-        viewModelScope.launch {
-            delay(600L)
-            refreshGuardAndPermissions()
-        }
     }
 
     fun addMemory(category: String, content: String) {
@@ -763,15 +1040,11 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun deleteMemory(id: String) {
-        viewModelScope.launch {
-            repo.deleteMemory(id)
-        }
+        viewModelScope.launch { repo.deleteMemory(id) }
     }
 
-    fun clearTranscripts() {
-        viewModelScope.launch {
-            repo.clearTranscripts()
-        }
+    fun togglePinMemory(id: String) {
+        viewModelScope.launch { repo.togglePinMemory(id) }
     }
 
     fun toggleMute() {
@@ -779,9 +1052,7 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
         audioEngine.isMuted = next
         val activeName = settings.value.activePersonaName
         val newStatus = if (next) "Mic muted hai" else "$activeName sun rahi hai..."
-        _uiState.update {
-            it.copy(isMuted = next, statusText = newStatus)
-        }
+        _uiState.update { it.copy(isMuted = next, statusText = newStatus) }
         CallServiceBridge.updateNotification(appContext, activeName, newStatus, next)
     }
 
@@ -820,6 +1091,7 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
 
     override fun onCleared() {
         super.onCleared()
+        try { sensorManager?.unregisterListener(this) } catch (_: Exception) {}
         CallServiceBridge.onToggleMuteRequested = null
         CallServiceBridge.onStopCallRequested = null
         AnnouncerStateBridge.onPhoneCallIncomingDuringLiveSession = null
