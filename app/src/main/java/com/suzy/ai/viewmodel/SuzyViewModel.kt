@@ -3,6 +3,7 @@ package com.suzy.ai.viewmodel
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.suzy.ai.audio.AudioBlockReason
 import com.suzy.ai.audio.AudioEngine
 import com.suzy.ai.data.MemoryItem
 import com.suzy.ai.data.MoodOption
@@ -61,6 +62,7 @@ data class SuzyUiState(
     val isTimerRunning: Boolean = false,
     val isGuardRunning: Boolean = false,
     val isWakeWordListening: Boolean = false,
+    val audioBlockReason: AudioBlockReason = AudioBlockReason.NONE,
     val lastAnnouncedEvent: AnnouncedEventRecord? = null,
     val permissions: AppPermissionsStatus = AppPermissionsStatus(),
     val toolFeedback: String = ""
@@ -118,6 +120,15 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
         CallServiceBridge.onToggleMuteRequested = { toggleMute() }
         CallServiceBridge.onStopCallRequested = { stopSession() }
 
+        AnnouncerStateBridge.onAudioShieldStateChanged = { reason ->
+            _uiState.update {
+                it.copy(
+                    audioBlockReason = reason,
+                    isWakeWordListening = AnnouncerStateBridge.isWakeWordListening
+                )
+            }
+        }
+
         AnnouncerStateBridge.onPhoneCallIncomingDuringLiveSession = { caller ->
             if (isSessionActive() && !_uiState.value.isMuted) {
                 toggleMute()
@@ -126,9 +137,17 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
             refreshGuardAndPermissions()
         }
 
+        // Completely release mic & suspend active Suzy session when user answers a phone/VoIP call
+        AnnouncerStateBridge.onPhoneCallOffhookSuspendLiveSession = {
+            if (isSessionActive()) {
+                stopSessionInternal(statusOverride = "Paused during phone call (Privacy Shield)")
+            }
+            refreshGuardAndPermissions()
+        }
+
         AnnouncerStateBridge.onInjectPromptIntoActiveLiveSession = { prompt ->
             val client = liveClient
-            if (isSessionActive() && client != null) {
+            if (isSessionActive() && client != null && AnnouncerStateBridge.audioBlockReason != AudioBlockReason.PHONE_CALL_ACTIVE) {
                 audioEngine.flushPlayback()
                 client.sendReactionPrompt(prompt)
                 refreshGuardAndPermissions()
@@ -139,7 +158,7 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         AnnouncerStateBridge.onWakeWordDetected = { trailingQuery ->
-            if (!isSessionActive()) {
+            if (!isSessionActive() && AnnouncerStateBridge.audioBlockReason == AudioBlockReason.NONE) {
                 val activeName = settings.value.activePersonaName
                 val wakePrompt = if (trailingQuery.isNotBlank()) {
                     "User ne abhi wake word bol kar tumhe bulaya aur kaha: '$trailingQuery'. Apne natural Hinglish style mein turant jawab do!"
@@ -162,6 +181,7 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
                 permissions = perms,
                 isGuardRunning = AnnouncerStateBridge.isGuardRunning,
                 isWakeWordListening = AnnouncerStateBridge.isWakeWordListening,
+                audioBlockReason = AnnouncerStateBridge.audioBlockReason,
                 lastAnnouncedEvent = AnnouncerStateBridge.lastAnnouncement
             )
         }
@@ -451,6 +471,13 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun startSession(customSettings: SuzySettings? = null, initialWakePrompt: String? = null) {
+        if (AnnouncerStateBridge.audioBlockReason == AudioBlockReason.PHONE_CALL_ACTIVE) {
+            _uiState.update {
+                it.copy(statusText = "Phone call active — Call Privacy Shield ON")
+            }
+            return
+        }
+
         val baseSettings = customSettings ?: settings.value
         if (baseSettings.apiKey.isBlank()) {
             _uiState.update {
@@ -488,6 +515,12 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun stopSession() {
+        stopSessionInternal(
+            statusOverride = "Say \"Hey ${settings.value.activePersonaName}\" or Tap Start Call"
+        )
+    }
+
+    private fun stopSessionInternal(statusOverride: String) {
         ++sessionGeneration
         pendingWakeGreetingPrompt = null
         AnnouncerStateBridge.isLiveCallSessionActive = false
@@ -506,7 +539,7 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.update {
             it.copy(
                 state = SuzyState.IDLE,
-                statusText = "Say \"Hey ${settings.value.activePersonaName}\" or Tap Start Call",
+                statusText = statusOverride,
                 amplitude = 0f
             )
         }
@@ -602,6 +635,26 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
                 delay(250L)
                 refreshGuardAndPermissions()
             }
+        }
+    }
+
+    fun toggleMediaShield(enabled: Boolean) {
+        val updated = settings.value.copy(mediaShieldEnabled = enabled)
+        viewModelScope.launch {
+            repo.saveSettings(updated)
+            CallAnnouncerService.syncWakeWordState(appContext)
+            delay(250L)
+            refreshGuardAndPermissions()
+        }
+    }
+
+    fun toggleCallPrivacyShield(enabled: Boolean) {
+        val updated = settings.value.copy(callPrivacyShieldEnabled = enabled)
+        viewModelScope.launch {
+            repo.saveSettings(updated)
+            CallAnnouncerService.syncWakeWordState(appContext)
+            delay(250L)
+            refreshGuardAndPermissions()
         }
     }
 
@@ -770,6 +823,8 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
         CallServiceBridge.onToggleMuteRequested = null
         CallServiceBridge.onStopCallRequested = null
         AnnouncerStateBridge.onPhoneCallIncomingDuringLiveSession = null
+        AnnouncerStateBridge.onPhoneCallOffhookSuspendLiveSession = null
+        AnnouncerStateBridge.onAudioShieldStateChanged = null
         AnnouncerStateBridge.onInjectPromptIntoActiveLiveSession = null
         AnnouncerStateBridge.onWakeWordDetected = null
         AnnouncerStateBridge.isLiveCallSessionActive = false

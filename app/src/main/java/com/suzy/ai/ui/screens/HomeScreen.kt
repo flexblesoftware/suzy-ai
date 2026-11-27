@@ -66,6 +66,7 @@ import androidx.compose.material.icons.rounded.Subtitles
 import androidx.compose.material.icons.rounded.SubtitlesOff
 import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material.icons.rounded.Timer
+import androidx.compose.material.icons.rounded.VolumeOff
 import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material3.AlertDialog
@@ -98,6 +99,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.suzy.ai.BuildConfig
+import com.suzy.ai.audio.AudioBlockReason
 import com.suzy.ai.data.MemoryItem
 import com.suzy.ai.data.MoodOption
 import com.suzy.ai.data.PersonaProfile
@@ -155,6 +157,8 @@ fun HomeScreen(
     onAddMemory: (String, String) -> Unit,
     onDeleteMemory: (String) -> Unit,
     onToggleWakeWord: (Boolean) -> Unit,
+    onToggleMediaShield: (Boolean) -> Unit,
+    onToggleCallPrivacyShield: (Boolean) -> Unit,
     onTestWakeWord: () -> Unit,
     onToggleCallAnnouncer: (Boolean) -> Unit,
     onToggleAnnounceCallerName: (Boolean) -> Unit,
@@ -246,6 +250,8 @@ fun HomeScreen(
                         uiState = uiState,
                         settings = settings,
                         onToggleWakeWord = onToggleWakeWord,
+                        onToggleMediaShield = onToggleMediaShield,
+                        onToggleCallPrivacyShield = onToggleCallPrivacyShield,
                         onTestWakeWord = {
                             onTestWakeWord()
                             selectedTab = 0
@@ -402,11 +408,16 @@ private fun OrbTab(
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold
                             )
-                        } else if (!isActive && settings.wakeWordEnabled && uiState.isWakeWordListening) {
+                        } else if (!isActive && settings.wakeWordEnabled) {
                             Spacer(modifier = Modifier.width(8.dp))
+                            val (badgeText, badgeColor) = when (uiState.audioBlockReason) {
+                                AudioBlockReason.MEDIA_PLAYING -> "MEDIA SHIELD" to Color(0xFFF59E0B)
+                                AudioBlockReason.PHONE_CALL_ACTIVE -> "CALL SHIELD" to Color(0xFFEF4444)
+                                else -> if (uiState.isWakeWordListening) ("WAKE ON" to Color(0xFF34D399)) else ("STANDBY" to TextSecondary)
+                            }
                             Text(
-                                text = "WAKE ON",
-                                color = Color(0xFF34D399),
+                                text = badgeText,
+                                color = badgeColor,
                                 fontSize = 9.sp,
                                 fontWeight = FontWeight.Bold
                             )
@@ -481,17 +492,26 @@ private fun OrbTab(
 
             Spacer(modifier = Modifier.height(8.dp))
 
+            val pillText = when {
+                isActive -> "${uiState.statusText}  •  LOCK-SCREEN ACTIVE"
+                uiState.audioBlockReason == AudioBlockReason.MEDIA_PLAYING -> "Media Playing • Mic & Wake Word Auto-Paused"
+                uiState.audioBlockReason == AudioBlockReason.PHONE_CALL_ACTIVE -> "Call Active • Privacy Shield Locked Mic"
+                else -> uiState.statusText
+            }
+
             GlassCard(
                 shape = RoundedCornerShape(50),
-                accentBorder = when (uiState.state) {
-                    SuzyState.SPEAKING -> NeonPink
-                    SuzyState.LISTENING -> NeonCyan
-                    SuzyState.ERROR -> Color(0xFFEF4444)
+                accentBorder = when {
+                    uiState.state == SuzyState.SPEAKING -> NeonPink
+                    uiState.state == SuzyState.LISTENING -> NeonCyan
+                    uiState.state == SuzyState.ERROR -> Color(0xFFEF4444)
+                    uiState.audioBlockReason == AudioBlockReason.MEDIA_PLAYING -> Color(0xFFF59E0B)
+                    uiState.audioBlockReason == AudioBlockReason.PHONE_CALL_ACTIVE -> Color(0xFFEF4444)
                     else -> NeonPurple
                 }
             ) {
                 Text(
-                    text = if (isActive) "${uiState.statusText}  •  LOCK-SCREEN ACTIVE" else uiState.statusText,
+                    text = pillText,
                     color = TextPrimary,
                     fontSize = 11.sp,
                     maxLines = 1,
@@ -1143,6 +1163,8 @@ private fun AlertsAndGuardTab(
     uiState: SuzyUiState,
     settings: SuzySettings,
     onToggleWakeWord: (Boolean) -> Unit,
+    onToggleMediaShield: (Boolean) -> Unit,
+    onToggleCallPrivacyShield: (Boolean) -> Unit,
     onTestWakeWord: () -> Unit,
     onToggleCallAnnouncer: (Boolean) -> Unit,
     onToggleAnnounceCallerName: (Boolean) -> Unit,
@@ -1176,14 +1198,14 @@ private fun AlertsAndGuardTab(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "WAKE-WORD & SAFE ALERTS",
+                    text = "WAKE-WORD & PRIVACY SHIELD",
                     color = NeonCyan,
                     fontSize = 15.sp,
                     fontWeight = FontWeight.Bold,
                     letterSpacing = 1.4.sp
                 )
                 Text(
-                    text = "Real Gemini Voice (${settings.voiceName}) • Zero Android TTS",
+                    text = "Media-Aware & Call-Locked Gemini Voice (${settings.voiceName})",
                     color = TextSecondary,
                     fontSize = 11.sp
                 )
@@ -1214,8 +1236,8 @@ private fun AlertsAndGuardTab(
             }
         }
 
-        // Section 1: Hands-Free Gemini Wake Word System
-        Text("SECTION 1 • HANDS-FREE WAKE WORD SYSTEM", color = TextSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+        // Section 1: Smart Wake Word + Media & Call Isolation Shield
+        Text("SECTION 1 • SMART WAKE WORD & AUDIO PRIVACY SHIELD", color = TextSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
         GlassCard(shape = RoundedCornerShape(20.dp), accentBorder = NeonCyan, modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Row(
@@ -1225,26 +1247,70 @@ private fun AlertsAndGuardTab(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text("Wake Word (\"Hey ${settings.activePersonaName}\" / \"Hey Suzy\")", color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                        Text("Bolte hi turant Real Gemini Live Voice call connect hoga", color = TextSecondary, fontSize = 11.sp)
+                        Text("Bolte hi Real Gemini Live Voice call start hoga", color = TextSecondary, fontSize = 11.sp)
                     }
                     Switch(checked = settings.wakeWordEnabled, onCheckedChange = onToggleWakeWord)
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Rounded.VolumeOff, contentDescription = null, tint = Color(0xFFF59E0B), modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Column {
+                            Text("YouTube & Media Playback Blocker", color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                            Text("Video/Audio play hote hi mic release hoga (no blinking, no listening)", color = TextSecondary, fontSize = 10.sp)
+                        }
+                    }
+                    Switch(checked = settings.mediaShieldEnabled, onCheckedChange = onToggleMediaShield)
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Rounded.Lock, contentDescription = null, tint = Color(0xFFEF4444), modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Column {
+                            Text("Phone & VoIP Call Privacy Lock", color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                            Text("Phone ya WhatsApp call par baat karte waqt AI bilkul nahi sunega", color = TextSecondary, fontSize = 10.sp)
+                        }
+                    }
+                    Switch(checked = settings.callPrivacyShieldEnabled, onCheckedChange = onToggleCallPrivacyShield)
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
                         imageVector = Icons.Rounded.Hearing,
                         contentDescription = null,
-                        tint = if (uiState.isWakeWordListening) Color(0xFF34D399) else TextSecondary,
+                        tint = when {
+                            uiState.audioBlockReason == AudioBlockReason.MEDIA_PLAYING -> Color(0xFFF59E0B)
+                            uiState.audioBlockReason == AudioBlockReason.PHONE_CALL_ACTIVE -> Color(0xFFEF4444)
+                            uiState.isWakeWordListening -> Color(0xFF34D399)
+                            else -> TextSecondary
+                        },
                         modifier = Modifier.size(15.dp)
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
                         text = when {
                             !settings.wakeWordEnabled -> "Status: Wake Word Off"
-                            uiState.isWakeWordListening -> "Status: Listening for \"Hey ${settings.activePersonaName}\"..."
-                            else -> "Status: Standby (Auto-resumes when idle)"
+                            uiState.audioBlockReason == AudioBlockReason.MEDIA_PLAYING -> "Status: Paused (YouTube / Media Sound Detected)"
+                            uiState.audioBlockReason == AudioBlockReason.PHONE_CALL_ACTIVE -> "Status: Locked (Phone / VoIP Call Active)"
+                            uiState.isWakeWordListening -> "Status: Active — Listening for \"Hey ${settings.activePersonaName}\""
+                            else -> "Status: Standby"
                         },
-                        color = if (uiState.isWakeWordListening) Color(0xFF34D399) else TextSecondary,
+                        color = when {
+                            uiState.audioBlockReason == AudioBlockReason.MEDIA_PLAYING -> Color(0xFFF59E0B)
+                            uiState.audioBlockReason == AudioBlockReason.PHONE_CALL_ACTIVE -> Color(0xFFEF4444)
+                            uiState.isWakeWordListening -> Color(0xFF34D399)
+                            else -> TextSecondary
+                        },
                         fontSize = 11.sp
                     )
                 }
@@ -1430,7 +1496,7 @@ private fun AlertsAndGuardTab(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text("24/7 Background Voice Guard", color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                        Text("Wake word, incoming calls aur safe notifications background mein active", color = TextSecondary, fontSize = 11.sp)
+                        Text("Media & call aware wake-word aur safe alerts background mein active", color = TextSecondary, fontSize = 11.sp)
                     }
                     Switch(checked = settings.backgroundGuardEnabled, onCheckedChange = onToggleBackgroundGuard)
                 }
@@ -1478,7 +1544,7 @@ private fun AlertsAndGuardTab(
                     onGrantClick = onRequestAllPermissions
                 )
                 PermissionStatusRow(
-                    title = "Phone State & Call Detection",
+                    title = "Phone State & Call Privacy Lock",
                     granted = perms.phoneStateGranted,
                     onGrantClick = onRequestAllPermissions
                 )

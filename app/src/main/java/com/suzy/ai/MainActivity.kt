@@ -130,6 +130,8 @@ class MainActivity : ComponentActivity() {
                         onAddMemory = { cat, text -> vm.addMemory(cat, text) },
                         onDeleteMemory = { vm.deleteMemory(it) },
                         onToggleWakeWord = { vm.toggleWakeWord(it) },
+                        onToggleMediaShield = { vm.toggleMediaShield(it) },
+                        onToggleCallPrivacyShield = { vm.toggleCallPrivacyShield(it) },
                         onTestWakeWord = { vm.triggerTestWakeWord() },
                         onToggleCallAnnouncer = { vm.toggleCallAnnouncer(it) },
                         onToggleAnnounceCallerName = { vm.toggleAnnounceCallerName(it) },

@@ -18,9 +18,11 @@ class IncomingCallReceiver : BroadcastReceiver() {
             TelephonyManager.EXTRA_STATE_RINGING -> {
                 CallAnnouncerService.onPhoneRinging(context.applicationContext, incomingNumber)
             }
-            TelephonyManager.EXTRA_STATE_OFFHOOK,
+            TelephonyManager.EXTRA_STATE_OFFHOOK -> {
+                CallAnnouncerService.onPhoneAnsweredOffhook(context.applicationContext)
+            }
             TelephonyManager.EXTRA_STATE_IDLE -> {
-                CallAnnouncerService.onPhoneEndedOrAnswered(context.applicationContext)
+                CallAnnouncerService.onPhoneCallIdle(context.applicationContext)
             }
         }
     }

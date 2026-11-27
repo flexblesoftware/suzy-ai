@@ -25,6 +25,8 @@ import android.telephony.TelephonyManager
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.suzy.ai.MainActivity
+import com.suzy.ai.audio.AudioBlockReason
+import com.suzy.ai.audio.AudioEnvironmentGuard
 import com.suzy.ai.audio.WakeWordEngine
 import com.suzy.ai.data.SettingsRepository
 import com.suzy.ai.data.SuzyCatalog
@@ -65,10 +67,19 @@ object AnnouncerStateBridge {
     var isLiveCallSessionActive: Boolean = false
 
     @Volatile
+    var audioBlockReason: AudioBlockReason = AudioBlockReason.NONE
+
+    @Volatile
     var lastAnnouncement: AnnouncedEventRecord? = null
 
     @Volatile
     var onPhoneCallIncomingDuringLiveSession: ((String) -> Unit)? = null
+
+    @Volatile
+    var onPhoneCallOffhookSuspendLiveSession: (() -> Unit)? = null
+
+    @Volatile
+    var onAudioShieldStateChanged: ((AudioBlockReason) -> Unit)? = null
 
     @Volatile
     var onInjectPromptIntoActiveLiveSession: ((String) -> Boolean)? = null
@@ -86,7 +97,8 @@ class CallAnnouncerService : Service() {
         const val ACTION_START_GUARD = "com.suzy.ai.action.START_GUARD"
         const val ACTION_SYNC_WAKE_WORD = "com.suzy.ai.action.SYNC_WAKE_WORD"
         const val ACTION_RINGING = "com.suzy.ai.action.RINGING"
-        const val ACTION_STOP_SPEAKING = "com.suzy.ai.action.STOP_SPEAKING"
+        const val ACTION_OFFHOOK = "com.suzy.ai.action.OFFHOOK"
+        const val ACTION_CALL_IDLE = "com.suzy.ai.action.CALL_IDLE"
         const val ACTION_NOTIFICATION_EVENT = "com.suzy.ai.action.NOTIFICATION_EVENT"
         const val ACTION_TEST_CALL = "com.suzy.ai.action.TEST_CALL"
         const val ACTION_TEST_NOTIFICATION = "com.suzy.ai.action.TEST_NOTIFICATION"
@@ -141,10 +153,20 @@ class CallAnnouncerService : Service() {
             }
         }
 
-        fun onPhoneEndedOrAnswered(context: Context) {
+        fun onPhoneAnsweredOffhook(context: Context) {
+            val intent = Intent(context, CallAnnouncerService::class.java).apply {
+                action = ACTION_OFFHOOK
+            }
+            try {
+                ContextCompat.startForegroundService(context, intent)
+            } catch (_: Exception) {
+            }
+        }
+
+        fun onPhoneCallIdle(context: Context) {
             if (!AnnouncerStateBridge.isGuardRunning) return
             val intent = Intent(context, CallAnnouncerService::class.java).apply {
-                action = ACTION_STOP_SPEAKING
+                action = ACTION_CALL_IDLE
             }
             try {
                 context.startService(intent)
@@ -224,18 +246,55 @@ class CallAnnouncerService : Service() {
     private var activeAnnouncementJob: Job? = null
     private var activeOneShotClient: GeminiLiveClient? = null
     private var activeOneShotTrack: AudioTrack? = null
+
+    @Volatile
     private var activeRingingResolved: Boolean = false
+
+    @Volatile
+    private var isCellularCallActive: Boolean = false
+
+    @Volatile
+    private var mediaShieldFlag: Boolean = true
+
+    @Volatile
+    private var callShieldFlag: Boolean = true
+
+    private var environmentGuard: AudioEnvironmentGuard? = null
     private var wakeWordEngine: WakeWordEngine? = null
 
     override fun onCreate() {
         super.onCreate()
         AnnouncerStateBridge.isGuardRunning = true
         createChannel()
-        startForegroundCompat(buildNotification("Gemini AI Voice & Wake-Word Guard Active"))
+        startForegroundCompat(buildNotification("Gemini AI Voice & Privacy Guard Active"))
         registerDynamicReceiver()
+
+        environmentGuard = AudioEnvironmentGuard(
+            context = applicationContext,
+            isSuzyLiveSessionActive = { AnnouncerStateBridge.isLiveCallSessionActive },
+            isMediaShieldEnabled = { mediaShieldFlag },
+            isCallShieldEnabled = { callShieldFlag },
+            onStateChanged = { reason ->
+                AnnouncerStateBridge.audioBlockReason = reason
+                AnnouncerStateBridge.onAudioShieldStateChanged?.invoke(reason)
+
+                if (reason != AudioBlockReason.NONE) {
+                    wakeWordEngine?.suspendTemporarily()
+                    if (reason == AudioBlockReason.PHONE_CALL_ACTIVE && AnnouncerStateBridge.isLiveCallSessionActive) {
+                        AnnouncerStateBridge.onPhoneCallOffhookSuspendLiveSession?.invoke()
+                    }
+                } else {
+                    wakeWordEngine?.resumeIfPermitted()
+                }
+            }
+        ).also { it.startMonitoring() }
 
         wakeWordEngine = WakeWordEngine(
             context = applicationContext,
+            canListenNow = {
+                val block = environmentGuard?.evaluateNow() ?: AudioBlockReason.NONE
+                block == AudioBlockReason.NONE && !AnnouncerStateBridge.isLiveCallSessionActive && !isCellularCallActive
+            },
             onWakeWordDetected = { trailingQuery ->
                 handleWakeWordTriggered(trailingQuery)
             },
@@ -247,22 +306,40 @@ class CallAnnouncerService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        startForegroundCompat(buildNotification("Gemini AI Voice & Wake-Word Guard Active"))
+        startForegroundCompat(buildNotification("Gemini AI Voice & Privacy Guard Active"))
 
         when (intent?.action) {
             ACTION_START_GUARD, ACTION_SYNC_WAKE_WORD -> {
                 refreshWakeWordEngine()
             }
             ACTION_RINGING -> {
-                wakeWordEngine?.stop()
+                isCellularCallActive = true
+                environmentGuard?.setTelephonyCallBusy(true)
+                wakeWordEngine?.suspendTemporarily()
                 val rawNum = intent.getStringExtra(EXTRA_NUMBER).orEmpty().trim()
                 handleIncomingRinging(rawNum)
             }
-            ACTION_STOP_SPEAKING -> {
-                ringDebounceJob?.cancel()
+            ACTION_OFFHOOK -> {
+                isCellularCallActive = true
                 activeRingingResolved = false
+                ringDebounceJob?.cancel()
                 stopOneShotPlayback()
-                refreshWakeWordEngine()
+                environmentGuard?.setTelephonyCallBusy(true)
+                wakeWordEngine?.suspendTemporarily()
+                AnnouncerStateBridge.onPhoneCallOffhookSuspendLiveSession?.invoke()
+            }
+            ACTION_CALL_IDLE -> {
+                isCellularCallActive = false
+                activeRingingResolved = false
+                ringDebounceJob?.cancel()
+                stopOneShotPlayback()
+                serviceScope.launch {
+                    delay(1800L)
+                    if (!isCellularCallActive) {
+                        environmentGuard?.setTelephonyCallBusy(false)
+                        refreshWakeWordEngine()
+                    }
+                }
             }
             ACTION_NOTIFICATION_EVENT -> {
                 val pkg = intent.getStringExtra(EXTRA_PACKAGE_NAME).orEmpty()
@@ -287,7 +364,8 @@ class CallAnnouncerService : Service() {
                         category = "CALL TEST",
                         displayTitle = "Best Friend",
                         displaySummary = "Gemini AI Voice Call Alert (${s.activePersonaName} • ${s.voiceName})",
-                        prompt = prompt
+                        prompt = prompt,
+                        bypassCallCheck = true
                     )
                 }
             }
@@ -313,7 +391,8 @@ class CallAnnouncerService : Service() {
                             category = "SAFE NOTIF TEST",
                             displayTitle = eval.displayTitle,
                             displaySummary = eval.displaySummary,
-                            prompt = eval.geminiPrompt
+                            prompt = eval.geminiPrompt,
+                            bypassCallCheck = true
                         )
                     }
                 }
@@ -330,7 +409,8 @@ class CallAnnouncerService : Service() {
                         category = category,
                         displayTitle = title,
                         displaySummary = title,
-                        prompt = prompt
+                        prompt = prompt,
+                        bypassCallCheck = false
                     )
                 }
             }
@@ -342,13 +422,20 @@ class CallAnnouncerService : Service() {
         serviceScope.launch {
             val repo = SettingsRepository(applicationContext)
             val s = repo.settingsFlow.first()
+            mediaShieldFlag = s.mediaShieldEnabled
+            callShieldFlag = s.callPrivacyShieldEnabled
+
+            val block = environmentGuard?.evaluateNow() ?: AudioBlockReason.NONE
             val shouldRun = s.backgroundGuardEnabled &&
                 s.wakeWordEnabled &&
                 !AnnouncerStateBridge.isLiveCallSessionActive &&
-                !activeRingingResolved
+                !isCellularCallActive &&
+                block == AudioBlockReason.NONE
 
             if (shouldRun) {
                 wakeWordEngine?.start(s.activePersonaName)
+            } else if (s.backgroundGuardEnabled && s.wakeWordEnabled) {
+                wakeWordEngine?.suspendTemporarily()
             } else {
                 wakeWordEngine?.stop()
             }
@@ -356,6 +443,13 @@ class CallAnnouncerService : Service() {
     }
 
     private fun handleWakeWordTriggered(trailingQuery: String) {
+        // Double-check media/call privacy before starting
+        val block = environmentGuard?.evaluateNow() ?: AudioBlockReason.NONE
+        if (block != AudioBlockReason.NONE || isCellularCallActive) {
+            wakeWordEngine?.suspendTemporarily()
+            return
+        }
+
         wakeWordEngine?.stop()
         playWakeWordChime()
 
@@ -372,7 +466,6 @@ class CallAnnouncerService : Service() {
         if (liveHandler != null) {
             liveHandler.invoke(trailingQuery)
         } else {
-            // Fallback if UI ViewModel was cleared: respond directly in real Gemini Live Voice
             serviceScope.launch {
                 val repo = SettingsRepository(applicationContext)
                 val s = repo.settingsFlow.first()
@@ -385,7 +478,8 @@ class CallAnnouncerService : Service() {
                     category = "WAKE VOICE",
                     displayTitle = "Hey ${s.activePersonaName}",
                     displaySummary = "Real Gemini Voice Response",
-                    prompt = prompt
+                    prompt = prompt,
+                    bypassCallCheck = false
                 )
             }
         }
@@ -408,7 +502,7 @@ class CallAnnouncerService : Service() {
             ringDebounceJob?.cancel()
             ringDebounceJob = serviceScope.launch {
                 delay(420L)
-                if (!activeRingingResolved) {
+                if (!activeRingingResolved && isCellularCallActive) {
                     activeRingingResolved = true
                     executeIncomingCallAnnouncement("")
                 }
@@ -416,7 +510,7 @@ class CallAnnouncerService : Service() {
             return
         }
 
-        if (rawNumber.isNotBlank() && !activeRingingResolved) {
+        if (rawNumber.isNotBlank() && !activeRingingResolved && isCellularCallActive) {
             ringDebounceJob?.cancel()
             activeRingingResolved = true
             executeIncomingCallAnnouncement(rawNumber)
@@ -449,7 +543,8 @@ class CallAnnouncerService : Service() {
                 category = "INCOMING CALL",
                 displayTitle = label,
                 displaySummary = "Incoming call announced via Gemini ${s.voiceName}",
-                prompt = prompt
+                prompt = prompt,
+                bypassCallCheck = true
             )
         }
     }
@@ -462,6 +557,11 @@ class CallAnnouncerService : Service() {
         messageBody: String
     ) {
         serviceScope.launch {
+            // Do not read notifications aloud while user is talking on a phone/VoIP call
+            if (isCellularCallActive || environmentGuard?.evaluateNow() == AudioBlockReason.PHONE_CALL_ACTIVE) {
+                return@launch
+            }
+
             val repo = SettingsRepository(applicationContext)
             val s = repo.settingsFlow.first()
             if (!s.notificationReaderEnabled) return@launch
@@ -497,7 +597,8 @@ class CallAnnouncerService : Service() {
                         category = appName.uppercase(),
                         displayTitle = eval.displayTitle,
                         displaySummary = eval.displaySummary,
-                        prompt = eval.geminiPrompt
+                        prompt = eval.geminiPrompt,
+                        bypassCallCheck = false
                     )
                 }
             }
@@ -546,8 +647,13 @@ class CallAnnouncerService : Service() {
         category: String,
         displayTitle: String,
         displaySummary: String,
-        prompt: String
+        prompt: String,
+        bypassCallCheck: Boolean
     ) {
+        if (!bypassCallCheck && environmentGuard?.evaluateNow() == AudioBlockReason.PHONE_CALL_ACTIVE) {
+            return
+        }
+
         val ts = SimpleDateFormat("hh:mm a", Locale.getDefault()).format(Date())
         AnnouncerStateBridge.lastAnnouncement = AnnouncedEventRecord(
             category = category,
@@ -562,7 +668,8 @@ class CallAnnouncerService : Service() {
             if (injected) return
         }
 
-        wakeWordEngine?.stop()
+        wakeWordEngine?.suspendTemporarily()
+        environmentGuard?.setAnnouncing(true)
         activeAnnouncementJob?.cancel()
         stopOneShotPlayback()
 
@@ -570,6 +677,7 @@ class CallAnnouncerService : Service() {
             val repo = SettingsRepository(applicationContext)
             val s = repo.settingsFlow.first()
             if (s.apiKey.isBlank()) {
+                environmentGuard?.setAnnouncing(false)
                 startForegroundCompat(buildNotification("Gemini API Key missing in AI Config"))
                 refreshWakeWordEngine()
                 return@launch
@@ -580,6 +688,7 @@ class CallAnnouncerService : Service() {
                 runOneShotGeminiVoice(s, prompt)
             } finally {
                 stopOneShotPlayback()
+                environmentGuard?.setAnnouncing(false)
                 try {
                     if (wakeLock?.isHeld == true) wakeLock.release()
                 } catch (_: Exception) {
@@ -808,7 +917,7 @@ class CallAnnouncerService : Service() {
         )
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
-            .setContentTitle("Suzy Gemini Wake-Word & Alert Guard")
+            .setContentTitle("Suzy Gemini Privacy & Voice Guard")
             .setContentText(subtitle)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
@@ -821,10 +930,10 @@ class CallAnnouncerService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val ch = NotificationChannel(
                 CHANNEL_ID,
-                "Suzy Gemini Wake-Word & Alert Guard",
+                "Suzy Gemini Privacy & Voice Guard",
                 NotificationManager.IMPORTANCE_MIN
             ).apply {
-                description = "Keeps hands-free Wake Word, Call Announcer, and Safe Notification Reader active"
+                description = "Smart Media-Aware Wake Word, Call Privacy Lock, and Safe Notification Reader"
             }
             val nm = getSystemService(NotificationManager::class.java)
             nm?.createNotificationChannel(ch)
@@ -834,6 +943,8 @@ class CallAnnouncerService : Service() {
     override fun onDestroy() {
         AnnouncerStateBridge.isGuardRunning = false
         AnnouncerStateBridge.isWakeWordListening = false
+        environmentGuard?.stopMonitoring()
+        environmentGuard = null
         wakeWordEngine?.destroy()
         wakeWordEngine = null
         ringDebounceJob?.cancel()

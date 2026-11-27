@@ -15,6 +15,7 @@ import java.util.Locale
 
 class WakeWordEngine(
     private val context: Context,
+    private val canListenNow: () -> Boolean,
     private val onWakeWordDetected: (trailingQuery: String) -> Unit,
     private val onListeningStateChanged: (Boolean) -> Unit
 ) {
@@ -22,7 +23,10 @@ class WakeWordEngine(
     private var speechRecognizer: SpeechRecognizer? = null
 
     @Volatile
-    private var shouldListen: Boolean = false
+    private var userEnabled: Boolean = false
+
+    @Volatile
+    private var isCurrentlyListening: Boolean = false
 
     @Volatile
     private var activePersona: String = "Suzy"
@@ -31,21 +35,48 @@ class WakeWordEngine(
 
     fun start(personaName: String) {
         activePersona = personaName.ifBlank { "Suzy" }
-        shouldListen = true
+        userEnabled = true
         mainHandler.post {
-            beginListeningInternal()
+            if (!canListenNow()) {
+                suspendTemporarily()
+            } else if (!isCurrentlyListening) {
+                beginListeningInternal()
+            }
         }
     }
 
-    fun updatePersonaName(personaName: String) {
-        activePersona = personaName.ifBlank { "Suzy" }
-    }
-
-    fun stop() {
-        shouldListen = false
+    fun suspendTemporarily() {
         mainHandler.post {
             cancelPendingRestart()
             destroyRecognizer()
+            if (isCurrentlyListening) {
+                isCurrentlyListening = false
+                onListeningStateChanged(false)
+            } else {
+                onListeningStateChanged(false)
+            }
+        }
+    }
+
+    fun resumeIfPermitted() {
+        mainHandler.post {
+            if (!userEnabled) return@post
+            if (!canListenNow()) {
+                suspendTemporarily()
+                return@post
+            }
+            if (!isCurrentlyListening && restartRunnable == null) {
+                scheduleRestart(900L)
+            }
+        }
+    }
+
+    fun stop() {
+        userEnabled = false
+        mainHandler.post {
+            cancelPendingRestart()
+            destroyRecognizer()
+            isCurrentlyListening = false
             onListeningStateChanged(false)
         }
     }
@@ -61,18 +92,25 @@ class WakeWordEngine(
 
     private fun scheduleRestart(delayMs: Long) {
         cancelPendingRestart()
-        if (!shouldListen) return
+        if (!userEnabled) return
         val runnable = Runnable {
-            if (shouldListen) {
-                beginListeningInternal()
+            restartRunnable = null
+            if (!userEnabled) return@Runnable
+            if (!canListenNow()) {
+                suspendTemporarily()
+                return@Runnable
             }
+            beginListeningInternal()
         }
         restartRunnable = runnable
         mainHandler.postDelayed(runnable, delayMs)
     }
 
     private fun beginListeningInternal() {
-        if (!shouldListen) return
+        if (!userEnabled || !canListenNow()) {
+            suspendTemporarily()
+            return
+        }
 
         val hasMic = ContextCompat.checkSelfPermission(
             context,
@@ -80,6 +118,7 @@ class WakeWordEngine(
         ) == PackageManager.PERMISSION_GRANTED
 
         if (!hasMic || !SpeechRecognizer.isRecognitionAvailable(context)) {
+            isCurrentlyListening = false
             onListeningStateChanged(false)
             return
         }
@@ -100,11 +139,13 @@ class WakeWordEngine(
             }
 
             speechRecognizer?.startListening(intent)
+            isCurrentlyListening = true
             onListeningStateChanged(true)
         } catch (_: Exception) {
+            isCurrentlyListening = false
             onListeningStateChanged(false)
             destroyRecognizer()
-            scheduleRestart(2000L)
+            scheduleRestart(2500L)
         }
     }
 
@@ -120,39 +161,65 @@ class WakeWordEngine(
     private fun createListener(): RecognitionListener {
         return object : RecognitionListener {
             override fun onReadyForSpeech(params: Bundle?) {
-                if (shouldListen) onListeningStateChanged(true)
+                if (userEnabled && canListenNow()) {
+                    isCurrentlyListening = true
+                    onListeningStateChanged(true)
+                } else {
+                    suspendTemporarily()
+                }
             }
 
-            override fun onBeginningOfSpeech() {}
+            override fun onBeginningOfSpeech() {
+                if (!canListenNow()) {
+                    suspendTemporarily()
+                }
+            }
+
             override fun onRmsChanged(rmsdB: Float) {}
             override fun onBufferReceived(buffer: ByteArray?) {}
-            override fun onEndOfSpeech() {}
+            override fun onEndOfSpeech() {
+                isCurrentlyListening = false
+            }
 
             override fun onError(error: Int) {
+                isCurrentlyListening = false
                 onListeningStateChanged(false)
-                if (!shouldListen) return
+                if (!userEnabled) return
+                if (!canListenNow()) {
+                    suspendTemporarily()
+                    return
+                }
                 val backoff = when (error) {
                     SpeechRecognizer.ERROR_RECOGNIZER_BUSY,
                     SpeechRecognizer.ERROR_CLIENT -> {
                         destroyRecognizer()
-                        1500L
+                        2200L
                     }
                     SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> {
-                        shouldListen = false
+                        userEnabled = false
                         return
                     }
-                    else -> 450L
+                    else -> 1200L
                 }
                 scheduleRestart(backoff)
             }
 
             override fun onResults(results: Bundle?) {
+                isCurrentlyListening = false
+                if (!canListenNow()) {
+                    suspendTemporarily()
+                    return
+                }
                 val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION).orEmpty()
                 if (handleTranscripts(matches)) return
-                scheduleRestart(350L)
+                scheduleRestart(1000L)
             }
 
             override fun onPartialResults(partialResults: Bundle?) {
+                if (!canListenNow()) {
+                    suspendTemporarily()
+                    return
+                }
                 val matches = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION).orEmpty()
                 handleTranscripts(matches)
             }
@@ -162,7 +229,7 @@ class WakeWordEngine(
     }
 
     private fun handleTranscripts(candidates: List<String>): Boolean {
-        if (!shouldListen || candidates.isEmpty()) return false
+        if (!userEnabled || !canListenNow() || candidates.isEmpty()) return false
 
         val personaLower = activePersona.lowercase(Locale.US).trim()
         val wakeAliases = buildList {

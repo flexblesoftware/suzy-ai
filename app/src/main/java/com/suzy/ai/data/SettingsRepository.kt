@@ -48,6 +48,8 @@ data class SuzySettings(
     val captionsEnabled: Boolean = true,
     val temperature: Float = 0.95f,
     val wakeWordEnabled: Boolean = true,
+    val mediaShieldEnabled: Boolean = true,
+    val callPrivacyShieldEnabled: Boolean = true,
     val callAnnouncerEnabled: Boolean = true,
     val announceCallerName: Boolean = true,
     val announcerRepeatCount: Int = 2,
@@ -77,6 +79,8 @@ class SettingsRepository(private val context: Context) {
         val CAPTIONS_ENABLED = booleanPreferencesKey("captions_enabled")
         val TEMPERATURE = floatPreferencesKey("temperature")
         val WAKE_WORD_ENABLED = booleanPreferencesKey("wake_word_enabled")
+        val MEDIA_SHIELD_ENABLED = booleanPreferencesKey("media_shield_enabled")
+        val CALL_PRIVACY_SHIELD_ENABLED = booleanPreferencesKey("call_privacy_shield_enabled")
         val CALL_ANNOUNCER_ENABLED = booleanPreferencesKey("call_announcer_enabled")
         val ANNOUNCE_CALLER_NAME = booleanPreferencesKey("announce_caller_name")
         val ANNOUNCER_REPEAT = intPreferencesKey("announcer_repeat_count")
@@ -109,6 +113,8 @@ class SettingsRepository(private val context: Context) {
             captionsEnabled = prefs[Keys.CAPTIONS_ENABLED] ?: true,
             temperature = prefs[Keys.TEMPERATURE] ?: 0.95f,
             wakeWordEnabled = prefs[Keys.WAKE_WORD_ENABLED] ?: true,
+            mediaShieldEnabled = prefs[Keys.MEDIA_SHIELD_ENABLED] ?: true,
+            callPrivacyShieldEnabled = prefs[Keys.CALL_PRIVACY_SHIELD_ENABLED] ?: true,
             callAnnouncerEnabled = prefs[Keys.CALL_ANNOUNCER_ENABLED] ?: true,
             announceCallerName = prefs[Keys.ANNOUNCE_CALLER_NAME] ?: true,
             announcerRepeatCount = prefs[Keys.ANNOUNCER_REPEAT] ?: 2,
@@ -151,6 +157,8 @@ class SettingsRepository(private val context: Context) {
             prefs[Keys.CAPTIONS_ENABLED] = settings.captionsEnabled
             prefs[Keys.TEMPERATURE] = settings.temperature
             prefs[Keys.WAKE_WORD_ENABLED] = settings.wakeWordEnabled
+            prefs[Keys.MEDIA_SHIELD_ENABLED] = settings.mediaShieldEnabled
+            prefs[Keys.CALL_PRIVACY_SHIELD_ENABLED] = settings.callPrivacyShieldEnabled
             prefs[Keys.CALL_ANNOUNCER_ENABLED] = settings.callAnnouncerEnabled
             prefs[Keys.ANNOUNCE_CALLER_NAME] = settings.announceCallerName
             prefs[Keys.ANNOUNCER_REPEAT] = settings.announcerRepeatCount.coerceIn(1, 3)
