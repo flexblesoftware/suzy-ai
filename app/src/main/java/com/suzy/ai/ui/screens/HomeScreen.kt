@@ -42,7 +42,9 @@ import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FlashlightOff
 import androidx.compose.material.icons.rounded.FlashlightOn
 import androidx.compose.material.icons.rounded.GraphicEq
+import androidx.compose.material.icons.rounded.Hearing
 import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.MarkChatRead
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.MicOff
@@ -53,6 +55,7 @@ import androidx.compose.material.icons.rounded.PhoneInTalk
 import androidx.compose.material.icons.rounded.PowerSettingsNew
 import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.RecordVoiceOver
+import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.SentimentVerySatisfied
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Shield
@@ -151,12 +154,17 @@ fun HomeScreen(
     onSelectVoice: (String) -> Unit,
     onAddMemory: (String, String) -> Unit,
     onDeleteMemory: (String) -> Unit,
+    onToggleWakeWord: (Boolean) -> Unit,
+    onTestWakeWord: () -> Unit,
     onToggleCallAnnouncer: (Boolean) -> Unit,
     onToggleAnnounceCallerName: (Boolean) -> Unit,
     onSetAnnouncerRepeat: (Int) -> Unit,
     onSetAnnouncerStyle: (String) -> Unit,
     onToggleNotificationReader: (Boolean) -> Unit,
     onToggleReadNotificationContent: (Boolean) -> Unit,
+    onToggleBlockSensitive: (Boolean) -> Unit,
+    onToggleHideOnLockScreen: (Boolean) -> Unit,
+    onToggleTrustedAppsOnly: (Boolean) -> Unit,
     onToggleBackgroundGuard: (Boolean) -> Unit,
     onTestCallAnnouncement: () -> Unit,
     onTestNotificationAnnouncement: () -> Unit,
@@ -237,12 +245,20 @@ fun HomeScreen(
                     3 -> AlertsAndGuardTab(
                         uiState = uiState,
                         settings = settings,
+                        onToggleWakeWord = onToggleWakeWord,
+                        onTestWakeWord = {
+                            onTestWakeWord()
+                            selectedTab = 0
+                        },
                         onToggleCallAnnouncer = onToggleCallAnnouncer,
                         onToggleAnnounceCallerName = onToggleAnnounceCallerName,
                         onSetAnnouncerRepeat = onSetAnnouncerRepeat,
                         onSetAnnouncerStyle = onSetAnnouncerStyle,
                         onToggleNotificationReader = onToggleNotificationReader,
                         onToggleReadNotificationContent = onToggleReadNotificationContent,
+                        onToggleBlockSensitive = onToggleBlockSensitive,
+                        onToggleHideOnLockScreen = onToggleHideOnLockScreen,
+                        onToggleTrustedAppsOnly = onToggleTrustedAppsOnly,
                         onToggleBackgroundGuard = onToggleBackgroundGuard,
                         onTestCallAnnouncement = onTestCallAnnouncement,
                         onTestNotificationAnnouncement = onTestNotificationAnnouncement,
@@ -265,7 +281,7 @@ fun HomeScreen(
                 }
             }
 
-            // Floating 5-Tab Glassmorphic Navigation Bar (ORB, PERSONAS, MEMORY, ALERTS, TOOLS)
+            // Floating 5-Tab Glassmorphic Navigation Bar
             GlassCard(
                 shape = RoundedCornerShape(28.dp),
                 modifier = Modifier
@@ -384,6 +400,14 @@ private fun OrbTab(
                                 text = formatDuration(uiState.callDurationSec),
                                 color = NeonPink,
                                 fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        } else if (!isActive && settings.wakeWordEnabled && uiState.isWakeWordListening) {
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "WAKE ON",
+                                color = Color(0xFF34D399),
+                                fontSize = 9.sp,
                                 fontWeight = FontWeight.Bold
                             )
                         }
@@ -1118,12 +1142,17 @@ private fun MemoryTab(
 private fun AlertsAndGuardTab(
     uiState: SuzyUiState,
     settings: SuzySettings,
+    onToggleWakeWord: (Boolean) -> Unit,
+    onTestWakeWord: () -> Unit,
     onToggleCallAnnouncer: (Boolean) -> Unit,
     onToggleAnnounceCallerName: (Boolean) -> Unit,
     onSetAnnouncerRepeat: (Int) -> Unit,
     onSetAnnouncerStyle: (String) -> Unit,
     onToggleNotificationReader: (Boolean) -> Unit,
     onToggleReadNotificationContent: (Boolean) -> Unit,
+    onToggleBlockSensitive: (Boolean) -> Unit,
+    onToggleHideOnLockScreen: (Boolean) -> Unit,
+    onToggleTrustedAppsOnly: (Boolean) -> Unit,
     onToggleBackgroundGuard: (Boolean) -> Unit,
     onTestCallAnnouncement: () -> Unit,
     onTestNotificationAnnouncement: () -> Unit,
@@ -1147,14 +1176,14 @@ private fun AlertsAndGuardTab(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "GEMINI AI VOICE ANNOUNCER",
+                    text = "WAKE-WORD & SAFE ALERTS",
                     color = NeonCyan,
                     fontSize = 15.sp,
                     fontWeight = FontWeight.Bold,
                     letterSpacing = 1.4.sp
                 )
                 Text(
-                    text = "Real Gemini Live Voice (${settings.voiceName}) • Zero Android TTS",
+                    text = "Real Gemini Voice (${settings.voiceName}) • Zero Android TTS",
                     color = TextSecondary,
                     fontSize = 11.sp
                 )
@@ -1185,8 +1214,56 @@ private fun AlertsAndGuardTab(
             }
         }
 
-        // Section 1: Gemini Incoming Call Voice Announcer
-        Text("SECTION 1 • GEMINI INCOMING CALL ANNOUNCER", color = TextSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+        // Section 1: Hands-Free Gemini Wake Word System
+        Text("SECTION 1 • HANDS-FREE WAKE WORD SYSTEM", color = TextSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+        GlassCard(shape = RoundedCornerShape(20.dp), accentBorder = NeonCyan, modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Wake Word (\"Hey ${settings.activePersonaName}\" / \"Hey Suzy\")", color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                        Text("Bolte hi turant Real Gemini Live Voice call connect hoga", color = TextSecondary, fontSize = 11.sp)
+                    }
+                    Switch(checked = settings.wakeWordEnabled, onCheckedChange = onToggleWakeWord)
+                }
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Rounded.Hearing,
+                        contentDescription = null,
+                        tint = if (uiState.isWakeWordListening) Color(0xFF34D399) else TextSecondary,
+                        modifier = Modifier.size(15.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = when {
+                            !settings.wakeWordEnabled -> "Status: Wake Word Off"
+                            uiState.isWakeWordListening -> "Status: Listening for \"Hey ${settings.activePersonaName}\"..."
+                            else -> "Status: Standby (Auto-resumes when idle)"
+                        },
+                        color = if (uiState.isWakeWordListening) Color(0xFF34D399) else TextSecondary,
+                        fontSize = 11.sp
+                    )
+                }
+
+                Button(
+                    onClick = onTestWakeWord,
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = NeonCyan),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Rounded.Hearing, contentDescription = null, tint = Color.Black)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("TEST WAKE WORD -> LIVE GEMINI VOICE", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                }
+            }
+        }
+
+        // Section 2: Gemini Incoming Call Voice Announcer
+        Text("SECTION 2 • GEMINI INCOMING CALL ANNOUNCER", color = TextSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
         GlassCard(shape = RoundedCornerShape(20.dp), accentBorder = NeonPink, modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Row(
@@ -1248,9 +1325,9 @@ private fun AlertsAndGuardTab(
             }
         }
 
-        // Section 2: Gemini AI Notification Announcer & Aloud Reader
-        Text("SECTION 2 • GEMINI NOTIFICATION ANNOUNCER & READER", color = TextSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
-        GlassCard(shape = RoundedCornerShape(20.dp), accentBorder = NeonCyan, modifier = Modifier.fillMaxWidth()) {
+        // Section 3: Safe Gemini Notification Announcer & Security Shield
+        Text("SECTION 3 • SAFE NOTIFICATION READER & SECURITY SHIELD", color = TextSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+        GlassCard(shape = RoundedCornerShape(20.dp), accentBorder = NeonPurple, modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -1258,8 +1335,8 @@ private fun AlertsAndGuardTab(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("Announce App Notifications", color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                        Text("WhatsApp, Instagram, Telegram, SMS aane par Gemini bolegi", color = TextSecondary, fontSize = 11.sp)
+                        Text("AI Notification Announcer", color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                        Text("Notifications ko real Gemini AI voice mein announce karegi", color = TextSecondary, fontSize = 11.sp)
                     }
                     Switch(checked = settings.notificationReaderEnabled, onCheckedChange = onToggleNotificationReader)
                 }
@@ -1271,9 +1348,53 @@ private fun AlertsAndGuardTab(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text("Read Message Content Aloud", color = TextPrimary, fontSize = 13.sp)
-                        Text("ON: Poora message padh kar sunayegi | OFF: Sirf sender ka naam", color = TextSecondary, fontSize = 11.sp)
+                        Text("ON: Message padh kar sunayegi | OFF: Sirf sender ka naam", color = TextSecondary, fontSize = 11.sp)
                     }
                     Switch(checked = settings.readNotificationContent, onCheckedChange = onToggleReadNotificationContent)
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Rounded.Security, contentDescription = null, tint = Color(0xFF34D399), modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Column {
+                            Text("OTP & Banking Security Blocker", color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                            Text("OTPs, Bank alerts & PINs kabhi read ya cloud par send nahi honge", color = TextSecondary, fontSize = 10.sp)
+                        }
+                    }
+                    Switch(checked = settings.blockSensitiveNotifications, onCheckedChange = onToggleBlockSensitive)
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Rounded.Lock, contentDescription = null, tint = NeonCyan, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Column {
+                            Text("Lock-Screen Privacy Guard", color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                            Text("Screen lock hone par message body chhupayega (sirf naam bolegi)", color = TextSecondary, fontSize = 10.sp)
+                        }
+                    }
+                    Switch(checked = settings.hideNotificationOnLockScreen, onCheckedChange = onToggleHideOnLockScreen)
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Trusted Apps Filter Only", color = TextPrimary, fontSize = 13.sp)
+                        Text("Sirf WhatsApp, Instagram, Telegram, SMS aur Gmail read karega", color = TextSecondary, fontSize = 10.sp)
+                    }
+                    Switch(checked = settings.trustedAppsOnly, onCheckedChange = onToggleTrustedAppsOnly)
                 }
 
                 Button(
@@ -1284,13 +1405,13 @@ private fun AlertsAndGuardTab(
                 ) {
                     Icon(Icons.Rounded.MarkChatRead, contentDescription = null)
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("TEST GEMINI NOTIFICATION READER", fontWeight = FontWeight.Bold)
+                    Text("TEST SAFE GEMINI NOTIFICATION", fontWeight = FontWeight.Bold)
                 }
 
                 uiState.lastAnnouncedEvent?.let { last ->
                     GlassCard(shape = RoundedCornerShape(12.dp), accentBorder = NeonCyan, modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.padding(10.dp)) {
-                            Text("LAST GEMINI ALERT • ${last.category} • ${last.time}", color = NeonCyan, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                            Text("LAST EVENT • ${last.category} • ${last.time}", color = NeonCyan, fontSize = 9.sp, fontWeight = FontWeight.Bold)
                             Text("${last.title} — ${last.summary}", color = TextPrimary, fontSize = 11.sp)
                         }
                     }
@@ -1298,8 +1419,8 @@ private fun AlertsAndGuardTab(
             }
         }
 
-        // Section 3: Background Foreground Guard
-        Text("SECTION 3 • FOREGROUND SERVICES & SCREEN-OFF SHIELD", color = TextSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+        // Section 4: Background Foreground Guard
+        Text("SECTION 4 • FOREGROUND SERVICES & SCREEN-OFF SHIELD", color = TextSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
         GlassCard(shape = RoundedCornerShape(18.dp), accentBorder = NeonPurple, modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(
@@ -1309,7 +1430,7 @@ private fun AlertsAndGuardTab(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text("24/7 Background Voice Guard", color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                        Text("Screen off ya app minimize hone par bhi Gemini voice alerts chalenge", color = TextSecondary, fontSize = 11.sp)
+                        Text("Wake word, incoming calls aur safe notifications background mein active", color = TextSecondary, fontSize = 11.sp)
                     }
                     Switch(checked = settings.backgroundGuardEnabled, onCheckedChange = onToggleBackgroundGuard)
                 }
@@ -1317,7 +1438,7 @@ private fun AlertsAndGuardTab(
                     Icon(Icons.Rounded.PhoneCallback, contentDescription = null, tint = NeonCyan, modifier = Modifier.size(15.dp))
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "Engine: Gemini Live Native Audio (${settings.voiceName})",
+                        text = "Engine: Gemini Live Native Audio (${settings.voiceName}) • Zero TTS",
                         color = NeonCyan,
                         fontSize = 11.sp
                     )
@@ -1325,14 +1446,14 @@ private fun AlertsAndGuardTab(
             }
         }
 
-        // Section 4: Required Permissions (6/6)
+        // Section 5: Required Permissions (6/6)
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "SECTION 4 • REQUIRED PERMISSIONS (${perms.grantedCount}/6)",
+                text = "SECTION 5 • REQUIRED PERMISSIONS (${perms.grantedCount}/6)",
                 color = TextSecondary,
                 fontSize = 10.sp,
                 fontWeight = FontWeight.Bold,
@@ -1352,7 +1473,7 @@ private fun AlertsAndGuardTab(
         GlassCard(shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 PermissionStatusRow(
-                    title = "Microphone (Live Voice)",
+                    title = "Microphone (Wake Word & Live Voice)",
                     granted = perms.micGranted,
                     onGrantClick = onRequestAllPermissions
                 )
@@ -1367,7 +1488,7 @@ private fun AlertsAndGuardTab(
                     onGrantClick = onRequestAllPermissions
                 )
                 PermissionStatusRow(
-                    title = "Notification Listener (Read Messages)",
+                    title = "Notification Listener (Safe Reader)",
                     granted = perms.notificationListenerGranted,
                     onGrantClick = onRequestNotificationListener
                 )

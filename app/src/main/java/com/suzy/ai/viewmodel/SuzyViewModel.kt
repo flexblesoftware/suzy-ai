@@ -45,7 +45,7 @@ enum class SuzyState {
 
 data class SuzyUiState(
     val state: SuzyState = SuzyState.IDLE,
-    val statusText: String = "Tap Start Call to talk",
+    val statusText: String = "Say \"Hey Suzy\" or Tap Start Call",
     val liveCaption: String = "",
     val lastCaption: String = "",
     val amplitude: Float = 0f,
@@ -60,6 +60,7 @@ data class SuzyUiState(
     val timerRemainingSec: Long = 0L,
     val isTimerRunning: Boolean = false,
     val isGuardRunning: Boolean = false,
+    val isWakeWordListening: Boolean = false,
     val lastAnnouncedEvent: AnnouncedEventRecord? = null,
     val permissions: AppPermissionsStatus = AppPermissionsStatus(),
     val toolFeedback: String = ""
@@ -105,6 +106,9 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
     @Volatile
     private var liveClient: GeminiLiveClient? = null
 
+    @Volatile
+    private var pendingWakeGreetingPrompt: String? = null
+
     private var timerJob: Job? = null
     private var countdownJob: Job? = null
     private var sessionStartMillis: Long = 0L
@@ -134,6 +138,19 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
 
+        AnnouncerStateBridge.onWakeWordDetected = { trailingQuery ->
+            if (!isSessionActive()) {
+                val activeName = settings.value.activePersonaName
+                val wakePrompt = if (trailingQuery.isNotBlank()) {
+                    "User ne abhi wake word bol kar tumhe bulaya aur kaha: '$trailingQuery'. Apne natural Hinglish style mein turant jawab do!"
+                } else {
+                    "User ne abhi 'Hey $activeName' bol kar tumhe awaz di hai! Pyaar se turant 1 chhoti cute line mein bolo 'Haan bolo jaan, main sun rahi hoon!'"
+                }
+                startSession(initialWakePrompt = wakePrompt)
+            }
+            refreshGuardAndPermissions()
+        }
+
         refreshDeviceTelemetry()
         refreshGuardAndPermissions()
     }
@@ -144,6 +161,7 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
             it.copy(
                 permissions = perms,
                 isGuardRunning = AnnouncerStateBridge.isGuardRunning,
+                isWakeWordListening = AnnouncerStateBridge.isWakeWordListening,
                 lastAnnouncedEvent = AnnouncerStateBridge.lastAnnouncement
             )
         }
@@ -156,7 +174,7 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
             CallAnnouncerService.stopGuard(appContext)
         }
         viewModelScope.launch {
-            delay(250L)
+            delay(300L)
             refreshGuardAndPermissions()
         }
     }
@@ -296,6 +314,7 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
                 if (gen != sessionGeneration) return@GeminiLiveClient
                 val activeName = targetSettings.activePersonaName
                 AnnouncerStateBridge.isLiveCallSessionActive = true
+                CallAnnouncerService.syncWakeWordState(appContext)
                 startCallTimer()
                 audioEngine.setSpeakerphone(_uiState.value.isSpeakerOn)
                 audioEngine.playUiChime(true)
@@ -315,7 +334,11 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 )
                 _uiState.update {
-                    it.copy(state = SuzyState.LISTENING, statusText = "$activeName sun rahi hai...")
+                    it.copy(
+                        state = SuzyState.LISTENING,
+                        statusText = "$activeName sun rahi hai...",
+                        isWakeWordListening = false
+                    )
                 }
                 CallServiceBridge.updateNotification(
                     appContext,
@@ -323,6 +346,17 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
                     "$activeName sun rahi hai...",
                     _uiState.value.isMuted
                 )
+
+                val wakeGreeting = pendingWakeGreetingPrompt
+                pendingWakeGreetingPrompt = null
+                if (!wakeGreeting.isNullOrBlank()) {
+                    viewModelScope.launch {
+                        delay(220L)
+                        if (gen == sessionGeneration) {
+                            liveClient?.sendReactionPrompt(wakeGreeting)
+                        }
+                    }
+                }
             },
             onAudioOutput = { pcm ->
                 if (gen != sessionGeneration) return@GeminiLiveClient
@@ -385,6 +419,7 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
                 persistCurrentTranscriptIfAny()
                 stopCallTimer()
                 CallServiceBridge.stopService(appContext)
+                CallAnnouncerService.syncWakeWordState(appContext)
                 _uiState.update {
                     it.copy(state = SuzyState.ERROR, statusText = "Error: $err", amplitude = 0f)
                 }
@@ -396,11 +431,12 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
                 persistCurrentTranscriptIfAny()
                 stopCallTimer()
                 CallServiceBridge.stopService(appContext)
+                CallAnnouncerService.syncWakeWordState(appContext)
                 _uiState.update { cur ->
                     if (cur.state != SuzyState.ERROR) {
                         cur.copy(
                             state = SuzyState.IDLE,
-                            statusText = "Tap Start Call to talk",
+                            statusText = "Say \"Hey ${settings.value.activePersonaName}\" or Tap Start Call",
                             amplitude = 0f
                         )
                     } else cur
@@ -414,7 +450,7 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
         return st == SuzyState.CONNECTING || st == SuzyState.LISTENING || st == SuzyState.SPEAKING
     }
 
-    fun startSession(customSettings: SuzySettings? = null) {
+    fun startSession(customSettings: SuzySettings? = null, initialWakePrompt: String? = null) {
         val baseSettings = customSettings ?: settings.value
         if (baseSettings.apiKey.isBlank()) {
             _uiState.update {
@@ -423,6 +459,10 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         val gen = ++sessionGeneration
+        pendingWakeGreetingPrompt = initialWakePrompt
+        AnnouncerStateBridge.isLiveCallSessionActive = true
+        CallAnnouncerService.syncWakeWordState(appContext)
+
         liveClient?.disconnect()
         audioEngine.flushPlayback()
 
@@ -432,7 +472,8 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
                 state = SuzyState.CONNECTING,
                 statusText = "${baseSettings.activePersonaName} connect ho rahi hai...",
                 liveCaption = "",
-                lastCaption = ""
+                lastCaption = "",
+                isWakeWordListening = false
             )
         }
         CallServiceBridge.startService(
@@ -448,6 +489,7 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
 
     fun stopSession() {
         ++sessionGeneration
+        pendingWakeGreetingPrompt = null
         AnnouncerStateBridge.isLiveCallSessionActive = false
         audioEngine.playUiChime(false)
         liveClient?.disconnect()
@@ -456,8 +498,17 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
         persistCurrentTranscriptIfAny()
         stopCallTimer()
         CallServiceBridge.stopService(appContext)
+        CallAnnouncerService.syncWakeWordState(appContext)
+        viewModelScope.launch {
+            delay(350L)
+            refreshGuardAndPermissions()
+        }
         _uiState.update {
-            it.copy(state = SuzyState.IDLE, statusText = "Tap Start Call to talk", amplitude = 0f)
+            it.copy(
+                state = SuzyState.IDLE,
+                statusText = "Say \"Hey ${settings.value.activePersonaName}\" or Tap Start Call",
+                amplitude = 0f
+            )
         }
     }
 
@@ -465,6 +516,7 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
         if (isSessionActive()) {
             startSession(updatedSettings)
         } else {
+            CallAnnouncerService.syncWakeWordState(appContext)
             _uiState.update {
                 it.copy(statusText = "${updatedSettings.activePersonaName} (${updatedSettings.voiceName}) ready")
             }
@@ -539,6 +591,24 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun toggleWakeWord(enabled: Boolean) {
+        val updated = settings.value.copy(wakeWordEnabled = enabled)
+        viewModelScope.launch {
+            repo.saveSettings(updated)
+            if (enabled) {
+                syncBackgroundGuard(true)
+            } else {
+                CallAnnouncerService.syncWakeWordState(appContext)
+                delay(250L)
+                refreshGuardAndPermissions()
+            }
+        }
+    }
+
+    fun triggerTestWakeWord() {
+        CallAnnouncerService.triggerTestWakeWord(appContext)
+    }
+
     fun toggleCallAnnouncer(enabled: Boolean) {
         val updated = settings.value.copy(callAnnouncerEnabled = enabled)
         viewModelScope.launch {
@@ -578,6 +648,27 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
 
     fun toggleReadNotificationContent(enabled: Boolean) {
         val updated = settings.value.copy(readNotificationContent = enabled)
+        viewModelScope.launch {
+            repo.saveSettings(updated)
+        }
+    }
+
+    fun toggleBlockSensitiveNotifications(enabled: Boolean) {
+        val updated = settings.value.copy(blockSensitiveNotifications = enabled)
+        viewModelScope.launch {
+            repo.saveSettings(updated)
+        }
+    }
+
+    fun toggleHideNotificationOnLockScreen(enabled: Boolean) {
+        val updated = settings.value.copy(hideNotificationOnLockScreen = enabled)
+        viewModelScope.launch {
+            repo.saveSettings(updated)
+        }
+    }
+
+    fun toggleTrustedAppsOnly(enabled: Boolean) {
+        val updated = settings.value.copy(trustedAppsOnly = enabled)
         viewModelScope.launch {
             repo.saveSettings(updated)
         }
@@ -680,6 +771,7 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
         CallServiceBridge.onStopCallRequested = null
         AnnouncerStateBridge.onPhoneCallIncomingDuringLiveSession = null
         AnnouncerStateBridge.onInjectPromptIntoActiveLiveSession = null
+        AnnouncerStateBridge.onWakeWordDetected = null
         AnnouncerStateBridge.isLiveCallSessionActive = false
         stopSession()
     }

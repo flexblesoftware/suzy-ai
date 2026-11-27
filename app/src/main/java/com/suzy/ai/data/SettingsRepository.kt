@@ -47,12 +47,16 @@ data class SuzySettings(
     val bargeInEnabled: Boolean = true,
     val captionsEnabled: Boolean = true,
     val temperature: Float = 0.95f,
+    val wakeWordEnabled: Boolean = true,
     val callAnnouncerEnabled: Boolean = true,
     val announceCallerName: Boolean = true,
     val announcerRepeatCount: Int = 2,
     val announcerStyle: String = "Girlfriend",
     val notificationReaderEnabled: Boolean = true,
     val readNotificationContent: Boolean = true,
+    val blockSensitiveNotifications: Boolean = true,
+    val hideNotificationOnLockScreen: Boolean = true,
+    val trustedAppsOnly: Boolean = true,
     val backgroundGuardEnabled: Boolean = true
 ) {
     companion object {
@@ -72,12 +76,16 @@ class SettingsRepository(private val context: Context) {
         val BARGE_IN = booleanPreferencesKey("barge_in")
         val CAPTIONS_ENABLED = booleanPreferencesKey("captions_enabled")
         val TEMPERATURE = floatPreferencesKey("temperature")
+        val WAKE_WORD_ENABLED = booleanPreferencesKey("wake_word_enabled")
         val CALL_ANNOUNCER_ENABLED = booleanPreferencesKey("call_announcer_enabled")
         val ANNOUNCE_CALLER_NAME = booleanPreferencesKey("announce_caller_name")
         val ANNOUNCER_REPEAT = intPreferencesKey("announcer_repeat_count")
         val ANNOUNCER_STYLE = stringPreferencesKey("announcer_style")
         val NOTIF_READER_ENABLED = booleanPreferencesKey("notif_reader_enabled")
         val READ_NOTIF_CONTENT = booleanPreferencesKey("read_notif_content")
+        val BLOCK_SENSITIVE_NOTIF = booleanPreferencesKey("block_sensitive_notif")
+        val HIDE_NOTIF_LOCK_SCREEN = booleanPreferencesKey("hide_notif_lock_screen")
+        val TRUSTED_APPS_ONLY = booleanPreferencesKey("trusted_apps_only")
         val BACKGROUND_GUARD = booleanPreferencesKey("background_guard_enabled")
         val MEMORIES_JSON = stringPreferencesKey("memory_vault_v1")
         val CUSTOM_PERSONAS_JSON = stringPreferencesKey("custom_personas_v1")
@@ -100,12 +108,16 @@ class SettingsRepository(private val context: Context) {
             bargeInEnabled = prefs[Keys.BARGE_IN] ?: true,
             captionsEnabled = prefs[Keys.CAPTIONS_ENABLED] ?: true,
             temperature = prefs[Keys.TEMPERATURE] ?: 0.95f,
+            wakeWordEnabled = prefs[Keys.WAKE_WORD_ENABLED] ?: true,
             callAnnouncerEnabled = prefs[Keys.CALL_ANNOUNCER_ENABLED] ?: true,
             announceCallerName = prefs[Keys.ANNOUNCE_CALLER_NAME] ?: true,
             announcerRepeatCount = prefs[Keys.ANNOUNCER_REPEAT] ?: 2,
             announcerStyle = prefs[Keys.ANNOUNCER_STYLE] ?: "Girlfriend",
             notificationReaderEnabled = prefs[Keys.NOTIF_READER_ENABLED] ?: true,
             readNotificationContent = prefs[Keys.READ_NOTIF_CONTENT] ?: true,
+            blockSensitiveNotifications = prefs[Keys.BLOCK_SENSITIVE_NOTIF] ?: true,
+            hideNotificationOnLockScreen = prefs[Keys.HIDE_NOTIF_LOCK_SCREEN] ?: true,
+            trustedAppsOnly = prefs[Keys.TRUSTED_APPS_ONLY] ?: true,
             backgroundGuardEnabled = prefs[Keys.BACKGROUND_GUARD] ?: true
         )
     }
@@ -138,12 +150,16 @@ class SettingsRepository(private val context: Context) {
             prefs[Keys.BARGE_IN] = settings.bargeInEnabled
             prefs[Keys.CAPTIONS_ENABLED] = settings.captionsEnabled
             prefs[Keys.TEMPERATURE] = settings.temperature
+            prefs[Keys.WAKE_WORD_ENABLED] = settings.wakeWordEnabled
             prefs[Keys.CALL_ANNOUNCER_ENABLED] = settings.callAnnouncerEnabled
             prefs[Keys.ANNOUNCE_CALLER_NAME] = settings.announceCallerName
             prefs[Keys.ANNOUNCER_REPEAT] = settings.announcerRepeatCount.coerceIn(1, 3)
             prefs[Keys.ANNOUNCER_STYLE] = settings.announcerStyle
             prefs[Keys.NOTIF_READER_ENABLED] = settings.notificationReaderEnabled
             prefs[Keys.READ_NOTIF_CONTENT] = settings.readNotificationContent
+            prefs[Keys.BLOCK_SENSITIVE_NOTIF] = settings.blockSensitiveNotifications
+            prefs[Keys.HIDE_NOTIF_LOCK_SCREEN] = settings.hideNotificationOnLockScreen
+            prefs[Keys.TRUSTED_APPS_ONLY] = settings.trustedAppsOnly
             prefs[Keys.BACKGROUND_GUARD] = settings.backgroundGuardEnabled
         }
     }

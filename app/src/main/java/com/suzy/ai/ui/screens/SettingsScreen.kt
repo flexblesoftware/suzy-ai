@@ -61,6 +61,7 @@ fun SettingsScreen(
     var customNote by remember(current) { mutableStateOf(current.customNote) }
     var bargeIn by remember(current) { mutableStateOf(current.bargeInEnabled) }
     var captions by remember(current) { mutableStateOf(current.captionsEnabled) }
+    var wakeWord by remember(current) { mutableStateOf(current.wakeWordEnabled) }
     var temperature by remember(current) { mutableFloatStateOf(current.temperature) }
     var showKey by remember { mutableStateOf(false) }
 
@@ -88,7 +89,6 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Section 1: API & Live Model
             Text("SECTION 1 • API & LIVE VOICE ENGINE", color = TextSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
             Spacer(modifier = Modifier.height(6.dp))
             GlassCard(modifier = Modifier.fillMaxWidth()) {
@@ -138,7 +138,6 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // Section 2: Persona, Voice & Personal Note (No raw hardcoded prompt wall)
             Text("SECTION 2 • PERSONA & VOICE TUNING", color = TextSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
             Spacer(modifier = Modifier.height(6.dp))
             GlassCard(modifier = Modifier.fillMaxWidth()) {
@@ -202,11 +201,24 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // Section 3: Call & HUD Controls
-            Text("SECTION 3 • CALL & HUD CONTROLS", color = TextSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+            Text("SECTION 3 • CALL, WAKE-WORD & HUD CONTROLS", color = TextSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
             Spacer(modifier = Modifier.height(6.dp))
             GlassCard(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text("Hands-Free Wake Word (\"Hey Suzy\")", color = TextPrimary, fontSize = 14.sp)
+                            Text("Bina touch kiye bolte hi real Gemini voice call start", color = TextSecondary, fontSize = 11.sp)
+                        }
+                        Switch(checked = wakeWord, onCheckedChange = { wakeWord = it })
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -241,16 +253,16 @@ fun SettingsScreen(
                 onClick = {
                     val cleanName = personaName.ifBlank { "Suzy" }
                     onSave(
-                        SuzySettings(
+                        current.copy(
                             apiKey = apiKey,
                             modelId = modelId,
                             voiceName = voiceName,
                             activePersonaName = cleanName,
-                            activeMoodId = current.activeMoodId,
                             customNote = customNote,
                             systemPrompt = SuzyCatalog.resolveHardcodedPrompt(cleanName, current.systemPrompt),
                             bargeInEnabled = bargeIn,
                             captionsEnabled = captions,
+                            wakeWordEnabled = wakeWord,
                             temperature = temperature
                         )
                     )

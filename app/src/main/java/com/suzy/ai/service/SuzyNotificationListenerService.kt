@@ -13,7 +13,6 @@ class SuzyNotificationListenerService : NotificationListenerService() {
         val item = sbn ?: return
         val pkg = item.packageName ?: return
 
-        // Ignore our own notifications and system/android internal alerts
         if (pkg == applicationContext.packageName || pkg == "android" || pkg == "com.android.systemui") {
             return
         }
@@ -21,12 +20,12 @@ class SuzyNotificationListenerService : NotificationListenerService() {
         val notif = item.notification ?: return
         val flags = notif.flags
 
-        // Ignore ongoing background services, group summaries, and progress bars
         if ((flags and Notification.FLAG_ONGOING_EVENT) != 0) return
         if ((flags and Notification.FLAG_GROUP_SUMMARY) != 0) return
         if (notif.category == Notification.CATEGORY_SERVICE ||
             notif.category == Notification.CATEGORY_PROGRESS ||
-            notif.category == Notification.CATEGORY_TRANSPORT
+            notif.category == Notification.CATEGORY_TRANSPORT ||
+            notif.category == Notification.CATEGORY_CALL
         ) {
             return
         }
@@ -39,10 +38,10 @@ class SuzyNotificationListenerService : NotificationListenerService() {
 
         if (title.isBlank() && body.isBlank()) return
 
-        // Deduplicate rapid duplicate posts from messaging apps
+        // Anti-spam cooldown & duplicate filter (5 seconds)
         val signature = "$pkg|$title|$body"
         val now = System.currentTimeMillis()
-        if (signature == lastSignature && (now - lastTimestampMs) < 4500L) {
+        if (signature == lastSignature && (now - lastTimestampMs) < 5000L) {
             return
         }
         lastSignature = signature
@@ -51,7 +50,9 @@ class SuzyNotificationListenerService : NotificationListenerService() {
         val appName = resolveAppName(pkg)
         CallAnnouncerService.onNotificationArrived(
             context = applicationContext,
+            packageName = pkg,
             appName = appName,
+            visibility = notif.visibility,
             senderTitle = title,
             messageBody = body
         )

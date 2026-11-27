@@ -15,6 +15,7 @@ import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioTrack
+import android.media.ToneGenerator
 import android.net.Uri
 import android.os.Build
 import android.os.IBinder
@@ -24,10 +25,13 @@ import android.telephony.TelephonyManager
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.suzy.ai.MainActivity
+import com.suzy.ai.audio.WakeWordEngine
 import com.suzy.ai.data.SettingsRepository
 import com.suzy.ai.data.SuzyCatalog
 import com.suzy.ai.network.GeminiLiveClient
 import com.suzy.ai.receiver.IncomingCallReceiver
+import com.suzy.ai.util.NotificationEvalResult
+import com.suzy.ai.util.NotificationSecurityGuard
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -55,6 +59,9 @@ object AnnouncerStateBridge {
     var isGuardRunning: Boolean = false
 
     @Volatile
+    var isWakeWordListening: Boolean = false
+
+    @Volatile
     var isLiveCallSessionActive: Boolean = false
 
     @Volatile
@@ -65,6 +72,9 @@ object AnnouncerStateBridge {
 
     @Volatile
     var onInjectPromptIntoActiveLiveSession: ((String) -> Boolean)? = null
+
+    @Volatile
+    var onWakeWordDetected: ((String) -> Unit)? = null
 }
 
 class CallAnnouncerService : Service() {
@@ -74,15 +84,19 @@ class CallAnnouncerService : Service() {
         const val NOTIFICATION_ID = 3802
 
         const val ACTION_START_GUARD = "com.suzy.ai.action.START_GUARD"
+        const val ACTION_SYNC_WAKE_WORD = "com.suzy.ai.action.SYNC_WAKE_WORD"
         const val ACTION_RINGING = "com.suzy.ai.action.RINGING"
         const val ACTION_STOP_SPEAKING = "com.suzy.ai.action.STOP_SPEAKING"
         const val ACTION_NOTIFICATION_EVENT = "com.suzy.ai.action.NOTIFICATION_EVENT"
         const val ACTION_TEST_CALL = "com.suzy.ai.action.TEST_CALL"
         const val ACTION_TEST_NOTIFICATION = "com.suzy.ai.action.TEST_NOTIFICATION"
+        const val ACTION_TEST_WAKE_WORD = "com.suzy.ai.action.TEST_WAKE_WORD"
         const val ACTION_GEMINI_ALERT = "com.suzy.ai.action.GEMINI_ALERT"
 
         const val EXTRA_NUMBER = "extra_number"
+        const val EXTRA_PACKAGE_NAME = "extra_package_name"
         const val EXTRA_APP_NAME = "extra_app_name"
+        const val EXTRA_VISIBILITY = "extra_visibility"
         const val EXTRA_TITLE = "extra_title"
         const val EXTRA_BODY = "extra_body"
         const val EXTRA_CATEGORY = "extra_category"
@@ -94,6 +108,17 @@ class CallAnnouncerService : Service() {
             }
             try {
                 ContextCompat.startForegroundService(context, intent)
+            } catch (_: Exception) {
+            }
+        }
+
+        fun syncWakeWordState(context: Context) {
+            if (!AnnouncerStateBridge.isGuardRunning) return
+            val intent = Intent(context, CallAnnouncerService::class.java).apply {
+                action = ACTION_SYNC_WAKE_WORD
+            }
+            try {
+                context.startService(intent)
             } catch (_: Exception) {
             }
         }
@@ -129,13 +154,17 @@ class CallAnnouncerService : Service() {
 
         fun onNotificationArrived(
             context: Context,
+            packageName: String,
             appName: String,
+            visibility: Int,
             senderTitle: String,
             messageBody: String
         ) {
             val intent = Intent(context, CallAnnouncerService::class.java).apply {
                 action = ACTION_NOTIFICATION_EVENT
+                putExtra(EXTRA_PACKAGE_NAME, packageName)
                 putExtra(EXTRA_APP_NAME, appName)
+                putExtra(EXTRA_VISIBILITY, visibility)
                 putExtra(EXTRA_TITLE, senderTitle)
                 putExtra(EXTRA_BODY, messageBody)
             }
@@ -165,6 +194,16 @@ class CallAnnouncerService : Service() {
             }
         }
 
+        fun triggerTestWakeWord(context: Context) {
+            val intent = Intent(context, CallAnnouncerService::class.java).apply {
+                action = ACTION_TEST_WAKE_WORD
+            }
+            try {
+                ContextCompat.startForegroundService(context, intent)
+            } catch (_: Exception) {
+            }
+        }
+
         fun triggerGeminiVoiceAlert(context: Context, category: String, title: String, prompt: String) {
             val intent = Intent(context, CallAnnouncerService::class.java).apply {
                 action = ACTION_GEMINI_ALERT
@@ -186,20 +225,36 @@ class CallAnnouncerService : Service() {
     private var activeOneShotClient: GeminiLiveClient? = null
     private var activeOneShotTrack: AudioTrack? = null
     private var activeRingingResolved: Boolean = false
+    private var wakeWordEngine: WakeWordEngine? = null
 
     override fun onCreate() {
         super.onCreate()
         AnnouncerStateBridge.isGuardRunning = true
         createChannel()
-        startForegroundCompat(buildNotification("Gemini AI Voice Announcer & Guard Active"))
+        startForegroundCompat(buildNotification("Gemini AI Voice & Wake-Word Guard Active"))
         registerDynamicReceiver()
+
+        wakeWordEngine = WakeWordEngine(
+            context = applicationContext,
+            onWakeWordDetected = { trailingQuery ->
+                handleWakeWordTriggered(trailingQuery)
+            },
+            onListeningStateChanged = { listening ->
+                AnnouncerStateBridge.isWakeWordListening = listening
+            }
+        )
+        refreshWakeWordEngine()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        startForegroundCompat(buildNotification("Gemini AI Voice Announcer & Guard Active"))
+        startForegroundCompat(buildNotification("Gemini AI Voice & Wake-Word Guard Active"))
 
         when (intent?.action) {
+            ACTION_START_GUARD, ACTION_SYNC_WAKE_WORD -> {
+                refreshWakeWordEngine()
+            }
             ACTION_RINGING -> {
+                wakeWordEngine?.stop()
                 val rawNum = intent.getStringExtra(EXTRA_NUMBER).orEmpty().trim()
                 handleIncomingRinging(rawNum)
             }
@@ -207,12 +262,15 @@ class CallAnnouncerService : Service() {
                 ringDebounceJob?.cancel()
                 activeRingingResolved = false
                 stopOneShotPlayback()
+                refreshWakeWordEngine()
             }
             ACTION_NOTIFICATION_EVENT -> {
+                val pkg = intent.getStringExtra(EXTRA_PACKAGE_NAME).orEmpty()
                 val appName = intent.getStringExtra(EXTRA_APP_NAME).orEmpty().ifBlank { "App" }
+                val visibility = intent.getIntExtra(EXTRA_VISIBILITY, Notification.VISIBILITY_PUBLIC)
                 val title = intent.getStringExtra(EXTRA_TITLE).orEmpty()
                 val body = intent.getStringExtra(EXTRA_BODY).orEmpty()
-                handleIncomingNotification(appName, title, body)
+                handleIncomingNotification(pkg, appName, visibility, title, body)
             }
             ACTION_TEST_CALL -> {
                 serviceScope.launch {
@@ -237,20 +295,31 @@ class CallAnnouncerService : Service() {
                 serviceScope.launch {
                     val repo = SettingsRepository(applicationContext)
                     val s = repo.settingsFlow.first()
-                    val prompt = buildNotificationAnnouncementPrompt(
+                    val eval = NotificationSecurityGuard.evaluate(
+                        context = applicationContext,
                         personaName = s.activePersonaName,
+                        packageName = "com.whatsapp",
                         appName = "WhatsApp",
+                        visibility = Notification.VISIBILITY_PUBLIC,
                         senderTitle = "Aarav",
                         messageBody = "Bhai aaj shaam ko milte hain, free ho kya?",
-                        readBody = true
+                        readContentEnabled = s.readNotificationContent,
+                        blockSensitive = s.blockSensitiveNotifications,
+                        hideWhenLocked = s.hideNotificationOnLockScreen,
+                        trustedAppsOnly = false
                     )
-                    dispatchGeminiVoiceAnnouncement(
-                        category = "NOTIF TEST",
-                        displayTitle = "WhatsApp • Aarav",
-                        displaySummary = "Bhai aaj shaam ko milte hain, free ho kya?",
-                        prompt = prompt
-                    )
+                    if (eval is NotificationEvalResult.SafeToAnnounce) {
+                        dispatchGeminiVoiceAnnouncement(
+                            category = "SAFE NOTIF TEST",
+                            displayTitle = eval.displayTitle,
+                            displaySummary = eval.displaySummary,
+                            prompt = eval.geminiPrompt
+                        )
+                    }
                 }
+            }
+            ACTION_TEST_WAKE_WORD -> {
+                handleWakeWordTriggered("")
             }
             ACTION_GEMINI_ALERT -> {
                 val category = intent.getStringExtra(EXTRA_CATEGORY).orEmpty().ifBlank { "ALERT" }
@@ -267,6 +336,71 @@ class CallAnnouncerService : Service() {
             }
         }
         return START_STICKY
+    }
+
+    private fun refreshWakeWordEngine() {
+        serviceScope.launch {
+            val repo = SettingsRepository(applicationContext)
+            val s = repo.settingsFlow.first()
+            val shouldRun = s.backgroundGuardEnabled &&
+                s.wakeWordEnabled &&
+                !AnnouncerStateBridge.isLiveCallSessionActive &&
+                !activeRingingResolved
+
+            if (shouldRun) {
+                wakeWordEngine?.start(s.activePersonaName)
+            } else {
+                wakeWordEngine?.stop()
+            }
+        }
+    }
+
+    private fun handleWakeWordTriggered(trailingQuery: String) {
+        wakeWordEngine?.stop()
+        playWakeWordChime()
+
+        val ts = SimpleDateFormat("hh:mm a", Locale.getDefault()).format(Date())
+        AnnouncerStateBridge.lastAnnouncement = AnnouncedEventRecord(
+            category = "WAKE WORD",
+            title = "Hey Suzy Activated",
+            time = ts,
+            summary = if (trailingQuery.isNotBlank()) "Query: \"$trailingQuery\"" else "Hands-free live Gemini voice started"
+        )
+        startForegroundCompat(buildNotification("Wake Word Triggered ($ts)"))
+
+        val liveHandler = AnnouncerStateBridge.onWakeWordDetected
+        if (liveHandler != null) {
+            liveHandler.invoke(trailingQuery)
+        } else {
+            // Fallback if UI ViewModel was cleared: respond directly in real Gemini Live Voice
+            serviceScope.launch {
+                val repo = SettingsRepository(applicationContext)
+                val s = repo.settingsFlow.first()
+                val prompt = if (trailingQuery.isNotBlank()) {
+                    "Tum ${s.activePersonaName} ho. User ne abhi wake word bol kar kaha: '$trailingQuery'. Apne natural Hinglish style mein turant jawab do."
+                } else {
+                    "Tum ${s.activePersonaName} ho. User ne abhi 'Hey ${s.activePersonaName}' bol kar tumhe awaz di hai! Pyaar se 1 chhoti cute line mein bolo 'Haan bolo jaan, main sun rahi hoon!'"
+                }
+                dispatchGeminiVoiceAnnouncement(
+                    category = "WAKE VOICE",
+                    displayTitle = "Hey ${s.activePersonaName}",
+                    displaySummary = "Real Gemini Voice Response",
+                    prompt = prompt
+                )
+            }
+        }
+    }
+
+    private fun playWakeWordChime() {
+        try {
+            val tg = ToneGenerator(AudioManager.STREAM_NOTIFICATION, 75)
+            tg.startTone(ToneGenerator.TONE_PROP_ACK, 150)
+            serviceScope.launch {
+                delay(240L)
+                try { tg.release() } catch (_: Exception) {}
+            }
+        } catch (_: Exception) {
+        }
     }
 
     private fun handleIncomingRinging(rawNumber: String) {
@@ -320,34 +454,53 @@ class CallAnnouncerService : Service() {
         }
     }
 
-    private fun handleIncomingNotification(appName: String, senderTitle: String, messageBody: String) {
+    private fun handleIncomingNotification(
+        packageName: String,
+        appName: String,
+        visibility: Int,
+        senderTitle: String,
+        messageBody: String
+    ) {
         serviceScope.launch {
             val repo = SettingsRepository(applicationContext)
             val s = repo.settingsFlow.first()
             if (!s.notificationReaderEnabled) return@launch
 
-            val cleanSender = senderTitle.take(60)
-            val cleanBody = messageBody.take(160)
-            val summary = if (s.readNotificationContent && cleanBody.isNotBlank()) {
-                if (cleanSender.isNotBlank()) "$cleanSender: $cleanBody" else cleanBody
-            } else {
-                if (cleanSender.isNotBlank()) "New message from $cleanSender" else "New notification on $appName"
+            when (
+                val eval = NotificationSecurityGuard.evaluate(
+                    context = applicationContext,
+                    personaName = s.activePersonaName,
+                    packageName = packageName,
+                    appName = appName,
+                    visibility = visibility,
+                    senderTitle = senderTitle,
+                    messageBody = messageBody,
+                    readContentEnabled = s.readNotificationContent,
+                    blockSensitive = s.blockSensitiveNotifications,
+                    hideWhenLocked = s.hideNotificationOnLockScreen,
+                    trustedAppsOnly = s.trustedAppsOnly
+                )
+            ) {
+                is NotificationEvalResult.Ignored -> return@launch
+                is NotificationEvalResult.BlockedSensitive -> {
+                    val ts = SimpleDateFormat("hh:mm a", Locale.getDefault()).format(Date())
+                    AnnouncerStateBridge.lastAnnouncement = AnnouncedEventRecord(
+                        category = "SECURITY SHIELD",
+                        title = "$appName (Protected)",
+                        time = ts,
+                        summary = eval.reason
+                    )
+                    return@launch
+                }
+                is NotificationEvalResult.SafeToAnnounce -> {
+                    dispatchGeminiVoiceAnnouncement(
+                        category = appName.uppercase(),
+                        displayTitle = eval.displayTitle,
+                        displaySummary = eval.displaySummary,
+                        prompt = eval.geminiPrompt
+                    )
+                }
             }
-
-            val prompt = buildNotificationAnnouncementPrompt(
-                personaName = s.activePersonaName,
-                appName = appName,
-                senderTitle = cleanSender,
-                messageBody = cleanBody,
-                readBody = s.readNotificationContent
-            )
-
-            dispatchGeminiVoiceAnnouncement(
-                category = appName.uppercase(),
-                displayTitle = if (cleanSender.isNotBlank()) "$appName • $cleanSender" else appName,
-                displaySummary = summary,
-                prompt = prompt
-            )
         }
     }
 
@@ -389,22 +542,6 @@ class CallAnnouncerService : Service() {
         }
     }
 
-    private fun buildNotificationAnnouncementPrompt(
-        personaName: String,
-        appName: String,
-        senderTitle: String,
-        messageBody: String,
-        readBody: Boolean
-    ): String {
-        return if (readBody && messageBody.isNotBlank()) {
-            val fromPart = if (senderTitle.isNotBlank()) " '$senderTitle' ka" else ""
-            "Tum $personaName ho. Abhi user ke phone par $appName par$fromPart notification aaya hai aur message likha hai: \"$messageBody\". Apne natural Hinglish persona style mein user ko pyar se batao ki $appName par kiska notification aaya hai aur yeh message padh kar sunao. Jawab chhota aur clear (1-2 lines) rakho."
-        } else {
-            val fromPart = if (senderTitle.isNotBlank()) " '$senderTitle' se" else ""
-            "Tum $personaName ho. Abhi user ke phone par $appName par$fromPart naya notification aaya hai. Apne natural Hinglish persona style mein 1 chhoti line mein user ko batao ki $appName par$fromPart notification aaya hai (message text mat padhna)."
-        }
-    }
-
     private fun dispatchGeminiVoiceAnnouncement(
         category: String,
         displayTitle: String,
@@ -420,13 +557,12 @@ class CallAnnouncerService : Service() {
         )
         startForegroundCompat(buildNotification("$category: $displayTitle ($ts)"))
 
-        // 1. If live call session is already open in app, speak directly through active Gemini session
         if (AnnouncerStateBridge.isLiveCallSessionActive) {
             val injected = AnnouncerStateBridge.onInjectPromptIntoActiveLiveSession?.invoke(prompt) ?: false
             if (injected) return
         }
 
-        // 2. Otherwise spin up real Gemini Live Voice one-shot stream in background (works screen-off!)
+        wakeWordEngine?.stop()
         activeAnnouncementJob?.cancel()
         stopOneShotPlayback()
 
@@ -435,6 +571,7 @@ class CallAnnouncerService : Service() {
             val s = repo.settingsFlow.first()
             if (s.apiKey.isBlank()) {
                 startForegroundCompat(buildNotification("Gemini API Key missing in AI Config"))
+                refreshWakeWordEngine()
                 return@launch
             }
 
@@ -447,6 +584,7 @@ class CallAnnouncerService : Service() {
                     if (wakeLock?.isHeld == true) wakeLock.release()
                 } catch (_: Exception) {
                 }
+                refreshWakeWordEngine()
             }
         }
     }
@@ -535,12 +673,10 @@ class CallAnnouncerService : Service() {
         activeOneShotClient = client
         client.connect(announcementSettings)
 
-        // Wait up to 14 seconds for Gemini Live voice turn to complete
         withTimeoutOrNull(14000L) {
             doneSignal.receive()
         }
 
-        // Let remaining buffered 24kHz PCM audio finish playing smoothly before closing track
         if (firstChunkTimeMs > 0L && totalBytesQueued > 0L) {
             val expectedDurationMs = (totalBytesQueued / 48L) + 450L
             val elapsedMs = System.currentTimeMillis() - firstChunkTimeMs
@@ -637,7 +773,19 @@ class CallAnnouncerService : Service() {
     }
 
     private fun startForegroundCompat(notification: Notification) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        val hasMic = ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.RECORD_AUDIO
+        ) == PackageManager.PERMISSION_GRANTED
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val types = if (hasMic) {
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE or ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+            } else {
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+            }
+            startForeground(NOTIFICATION_ID, notification, types)
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(
                 NOTIFICATION_ID,
                 notification,
@@ -659,8 +807,8 @@ class CallAnnouncerService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_menu_call)
-            .setContentTitle("Suzy Gemini Voice Guard")
+            .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+            .setContentTitle("Suzy Gemini Wake-Word & Alert Guard")
             .setContentText(subtitle)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
@@ -673,10 +821,10 @@ class CallAnnouncerService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val ch = NotificationChannel(
                 CHANNEL_ID,
-                "Suzy Gemini Voice Guard",
+                "Suzy Gemini Wake-Word & Alert Guard",
                 NotificationManager.IMPORTANCE_MIN
             ).apply {
-                description = "Keeps Gemini AI Voice Call & Notification Announcer active in background"
+                description = "Keeps hands-free Wake Word, Call Announcer, and Safe Notification Reader active"
             }
             val nm = getSystemService(NotificationManager::class.java)
             nm?.createNotificationChannel(ch)
@@ -685,6 +833,9 @@ class CallAnnouncerService : Service() {
 
     override fun onDestroy() {
         AnnouncerStateBridge.isGuardRunning = false
+        AnnouncerStateBridge.isWakeWordListening = false
+        wakeWordEngine?.destroy()
+        wakeWordEngine = null
         ringDebounceJob?.cancel()
         activeAnnouncementJob?.cancel()
         stopOneShotPlayback()
