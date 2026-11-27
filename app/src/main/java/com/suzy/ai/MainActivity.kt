@@ -1,9 +1,15 @@
 package com.suzy.ai
 
 import android.Manifest
+import android.annotation.SuppressLint
+import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -25,6 +31,23 @@ import com.suzy.ai.update.UpdateManager
 import com.suzy.ai.viewmodel.SuzyViewModel
 
 class MainActivity : ComponentActivity() {
+
+    @SuppressLint("BatteryLife")
+    private fun ensureBatteryExemption() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            try {
+                val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+                if (!pm.isIgnoringBatteryOptimizations(packageName)) {
+                    val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                        data = Uri.parse("package:$packageName")
+                    }
+                    startActivity(intent)
+                }
+            } catch (_: Exception) {
+            }
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
@@ -62,6 +85,7 @@ class MainActivity : ComponentActivity() {
                     contract = ActivityResultContracts.RequestPermission()
                 ) { granted ->
                     if (granted) {
+                        ensureBatteryExemption()
                         vm.startSession()
                     }
                 }
@@ -93,6 +117,7 @@ class MainActivity : ComponentActivity() {
                                 Manifest.permission.RECORD_AUDIO
                             ) == PackageManager.PERMISSION_GRANTED
                             if (hasMic) {
+                                ensureBatteryExemption()
                                 vm.startSession()
                             } else {
                                 permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)

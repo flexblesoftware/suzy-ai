@@ -13,6 +13,7 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -25,6 +26,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.suzy.ai.ui.theme.NeonCyan
 import com.suzy.ai.ui.theme.NeonPink
@@ -38,7 +40,8 @@ import kotlin.math.sin
 fun SuzyOrb(
     state: SuzyState,
     amplitude: Float,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    orbSize: Dp = 230.dp
 ) {
     val smoothAmp by animateFloatAsState(
         targetValue = amplitude.coerceIn(0f, 1f),
@@ -113,12 +116,12 @@ fun SuzyOrb(
 
     Box(
         contentAlignment = Alignment.Center,
-        modifier = modifier.size(290.dp)
+        modifier = modifier.size(orbSize)
     ) {
-        Canvas(modifier = Modifier.size(290.dp)) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
             val center = Offset(size.width / 2f, size.height / 2f)
             val baseRadius = size.minDimension * 0.27f
-            val dynamicRadius = baseRadius * breathe + (smoothAmp * 26f)
+            val dynamicRadius = baseRadius * breathe + (smoothAmp * 20f)
 
             // 1. Deep Ambient Outer Bloom
             drawCircle(
@@ -129,9 +132,9 @@ fun SuzyOrb(
                         Color.Transparent
                     ),
                     center = center,
-                    radius = dynamicRadius * 2.15f
+                    radius = dynamicRadius * 2.1f
                 ),
-                radius = dynamicRadius * 2.15f,
+                radius = dynamicRadius * 2.1f,
                 center = center
             )
 
@@ -143,9 +146,9 @@ fun SuzyOrb(
                 val angleRad = angleDeg * (PI / 180.0)
                 val waveFactor = (sin((i * 0.65) + (primaryAngle * 0.08)) + 1.0) * 0.5
                 val barLen = if (state == SuzyState.SPEAKING || state == SuzyState.LISTENING) {
-                    6f + (smoothAmp * 34f * waveFactor.toFloat())
+                    5f + (smoothAmp * 28f * waveFactor.toFloat())
                 } else {
-                    4f + (waveFactor.toFloat() * 5f)
+                    4f + (waveFactor.toFloat() * 4f)
                 }
 
                 val start = Offset(
@@ -161,7 +164,7 @@ fun SuzyOrb(
                     color = if (i % 2 == 0) primaryColor.copy(alpha = 0.78f) else secondaryColor.copy(alpha = 0.65f),
                     start = start,
                     end = end,
-                    strokeWidth = 3.5f,
+                    strokeWidth = 3.2f,
                     cap = StrokeCap.Round
                 )
             }
@@ -185,7 +188,7 @@ fun SuzyOrb(
                     useCenter = false,
                     topLeft = Offset(center.x - ringRadius, center.y - ringRadius),
                     size = Size(ringRadius * 2f, ringRadius * 2f),
-                    style = Stroke(width = 4.5f, cap = StrokeCap.Round)
+                    style = Stroke(width = 4f, cap = StrokeCap.Round)
                 )
             }
 
@@ -207,7 +210,7 @@ fun SuzyOrb(
                     useCenter = false,
                     topLeft = Offset(center.x - innerRing, center.y - innerRing),
                     size = Size(innerRing * 2f, innerRing * 2f),
-                    style = Stroke(width = 3f, cap = StrokeCap.Round)
+                    style = Stroke(width = 2.8f, cap = StrokeCap.Round)
                 )
             }
 
@@ -257,7 +260,7 @@ fun SuzyOrb(
                 ),
                 radius = dynamicRadius,
                 center = center,
-                style = Stroke(width = 2.2f)
+                style = Stroke(width = 2f)
             )
 
             drawCircle(

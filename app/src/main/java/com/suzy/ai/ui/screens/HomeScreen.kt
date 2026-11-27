@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -63,6 +64,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
@@ -90,7 +92,6 @@ import com.suzy.ai.data.SuzySettings
 import com.suzy.ai.ui.components.GlassBackground
 import com.suzy.ai.ui.components.GlassCard
 import com.suzy.ai.ui.components.SuzyOrb
-import com.suzy.ai.ui.theme.BgDark
 import com.suzy.ai.ui.theme.NeonCyan
 import com.suzy.ai.ui.theme.NeonPink
 import com.suzy.ai.ui.theme.NeonPurple
@@ -155,7 +156,7 @@ fun HomeScreen(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 12.dp)
+                    .padding(horizontal = 16.dp, vertical = 10.dp)
             ) {
                 when (selectedTab) {
                     0 -> OrbTab(
@@ -210,7 +211,7 @@ fun HomeScreen(
                 shape = RoundedCornerShape(28.dp),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 14.dp, vertical = 10.dp)
+                    .padding(horizontal = 14.dp, vertical = 8.dp)
             ) {
                 Row(
                     modifier = Modifier
@@ -286,12 +287,20 @@ private fun OrbTab(
         EmotionChip("Care", Icons.Rounded.Spa, Color(0xFF34D399), "Bahut pyaar se caring voice mein mera mood theek karo.")
     )
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        // Glass Top Header
+    val captionScrollState = rememberScrollState()
+    val captionToShow = uiState.liveCaption.ifBlank { uiState.lastCaption }
+    LaunchedEffect(captionToShow) {
+        captionScrollState.animateScrollTo(captionScrollState.maxValue)
+    }
+
+    Column(
+        modifier = Modifier.fillMaxSize(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.SpaceBetween
+    ) {
+        // 1. Glass Top Header
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .align(Alignment.TopCenter),
+            modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -300,11 +309,11 @@ private fun OrbTab(
                 accentBorder = NeonPurple,
                 modifier = Modifier.weight(1f).padding(end = 8.dp)
             ) {
-                Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp)) {
                     Text(
                         text = settings.activePersonaName.uppercase(),
                         color = TextPrimary,
-                        fontSize = 16.sp,
+                        fontSize = 15.sp,
                         fontWeight = FontWeight.Bold,
                         letterSpacing = 1.8.sp,
                         maxLines = 1,
@@ -326,12 +335,12 @@ private fun OrbTab(
                     shape = CircleShape,
                     accentBorder = if (settings.captionsEnabled) NeonPurple else null
                 ) {
-                    IconButton(onClick = onToggleCaptions, modifier = Modifier.size(40.dp)) {
+                    IconButton(onClick = onToggleCaptions, modifier = Modifier.size(38.dp)) {
                         Icon(
                             imageVector = if (settings.captionsEnabled) Icons.Rounded.Subtitles else Icons.Rounded.SubtitlesOff,
                             contentDescription = "Live Captions",
                             tint = if (settings.captionsEnabled) NeonCyan else TextSecondary,
-                            modifier = Modifier.size(19.dp)
+                            modifier = Modifier.size(18.dp)
                         )
                     }
                 }
@@ -340,38 +349,46 @@ private fun OrbTab(
                     shape = CircleShape,
                     accentBorder = if (uiState.isSpeakerOn) NeonCyan else null
                 ) {
-                    IconButton(onClick = onToggleSpeaker, modifier = Modifier.size(40.dp)) {
+                    IconButton(onClick = onToggleSpeaker, modifier = Modifier.size(38.dp)) {
                         Icon(
                             imageVector = if (uiState.isSpeakerOn) Icons.Rounded.VolumeUp else Icons.Rounded.PhoneInTalk,
                             contentDescription = "Speaker Toggle",
                             tint = if (uiState.isSpeakerOn) NeonCyan else TextPrimary,
-                            modifier = Modifier.size(19.dp)
+                            modifier = Modifier.size(18.dp)
                         )
                     }
                 }
 
                 GlassCard(shape = CircleShape) {
-                    IconButton(onClick = onOpenSettings, modifier = Modifier.size(40.dp)) {
+                    IconButton(onClick = onOpenSettings, modifier = Modifier.size(38.dp)) {
                         Icon(
                             imageVector = Icons.Rounded.Settings,
                             contentDescription = "Settings",
                             tint = TextPrimary,
-                            modifier = Modifier.size(19.dp)
+                            modifier = Modifier.size(18.dp)
                         )
                     }
                 }
             }
         }
 
-        // Center ORB + Status Pill + Live Captions HUD
+        // 2. Center ORB + Status Pill + Dedicated Non-Overlapping Transcript HUD
         Column(
             modifier = Modifier
-                .align(Alignment.Center)
-                .padding(bottom = 26.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+                .weight(1f)
+                .fillMaxWidth()
+                .padding(vertical = 4.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
         ) {
-            SuzyOrb(state = uiState.state, amplitude = uiState.amplitude)
-            Spacer(modifier = Modifier.height(10.dp))
+            SuzyOrb(
+                state = uiState.state,
+                amplitude = uiState.amplitude,
+                orbSize = if (isActive && settings.captionsEnabled) 205.dp else 235.dp
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
             GlassCard(
                 shape = RoundedCornerShape(50),
                 accentBorder = when (uiState.state) {
@@ -382,55 +399,84 @@ private fun OrbTab(
                 }
             ) {
                 Text(
-                    text = if (isActive) "${uiState.statusText}  •  LOCK-SCREEN READY" else uiState.statusText,
+                    text = if (isActive) "${uiState.statusText}  •  LOCK-SCREEN ACTIVE" else uiState.statusText,
                     color = TextPrimary,
-                    fontSize = 12.sp,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 7.dp),
+                    fontSize = 11.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
                     textAlign = TextAlign.Center
                 )
             }
 
-            // Live Captions HUD
-            val captionToShow = uiState.liveCaption.ifBlank { uiState.lastCaption }
-            if (settings.captionsEnabled && isActive && captionToShow.isNotBlank()) {
-                Spacer(modifier = Modifier.height(10.dp))
+            if (settings.captionsEnabled && isActive) {
+                Spacer(modifier = Modifier.height(8.dp))
                 GlassCard(
                     shape = RoundedCornerShape(16.dp),
-                    accentBorder = NeonPink,
+                    accentBorder = if (uiState.state == SuzyState.SPEAKING) NeonPink else NeonPurple,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 12.dp)
+                        .padding(horizontal = 6.dp)
                 ) {
-                    Text(
-                        text = captionToShow,
-                        color = TextPrimary,
-                        fontSize = 12.sp,
-                        maxLines = 3,
-                        overflow = TextOverflow.Ellipsis,
-                        textAlign = TextAlign.Center,
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 14.dp, vertical = 9.dp)
-                    )
+                            .padding(horizontal = 12.dp, vertical = 7.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(5.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(6.dp)
+                                    .clip(CircleShape)
+                                    .background(if (uiState.state == SuzyState.SPEAKING) NeonPink else NeonCyan)
+                            )
+                            Text(
+                                text = "${settings.activePersonaName.uppercase()} • LIVE TRANSCRIPT",
+                                color = NeonCyan,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 1.sp
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(3.dp))
+
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 24.dp, max = 56.dp)
+                                .verticalScroll(captionScrollState)
+                        ) {
+                            Text(
+                                text = captionToShow.ifBlank { "Baat shuru karo, live transcript yahan dikhega..." },
+                                color = if (captionToShow.isBlank()) TextSecondary else TextPrimary,
+                                fontSize = 12.sp,
+                                lineHeight = 17.sp,
+                                textAlign = TextAlign.Start,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
                 }
             }
         }
 
-        // Bottom Controls: Live Mood Switcher + Quick Emotions + Call Button
+        // 3. Bottom Controls (Always cleanly separated below Transcript HUD)
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .align(Alignment.BottomCenter)
-                .padding(bottom = 2.dp),
+                .padding(top = 4.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Live Mood Switcher Strip
             Row(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 modifier = Modifier
                     .fillMaxWidth()
                     .horizontalScroll(rememberScrollState())
-                    .padding(bottom = 10.dp)
+                    .padding(bottom = 8.dp)
             ) {
                 SuzyCatalog.moods.forEach { mood ->
                     val selected = settings.activeMoodId == mood.id
@@ -441,7 +487,7 @@ private fun OrbTab(
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Rounded.Mood,
@@ -464,7 +510,7 @@ private fun OrbTab(
             if (isActive) {
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.padding(bottom = 12.dp)
+                    modifier = Modifier.padding(bottom = 10.dp)
                 ) {
                     emotions.forEach { item ->
                         GlassCard(
@@ -474,11 +520,11 @@ private fun OrbTab(
                         ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
                             ) {
-                                Icon(item.icon, contentDescription = item.label, tint = item.tint, modifier = Modifier.size(14.dp))
+                                Icon(item.icon, contentDescription = item.label, tint = item.tint, modifier = Modifier.size(13.dp))
                                 Spacer(modifier = Modifier.width(4.dp))
-                                Text(item.label, color = TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                                Text(item.label, color = TextPrimary, fontSize = 10.sp, fontWeight = FontWeight.Medium)
                             }
                         }
                     }
@@ -495,7 +541,7 @@ private fun OrbTab(
                         shape = CircleShape,
                         accentBorder = if (uiState.isMuted) Color(0xFFEF4444) else NeonCyan
                     ) {
-                        IconButton(onClick = onToggleMute, modifier = Modifier.size(50.dp)) {
+                        IconButton(onClick = onToggleMute, modifier = Modifier.size(48.dp)) {
                             Icon(
                                 imageVector = if (uiState.isMuted) Icons.Rounded.MicOff else Icons.Rounded.Mic,
                                 contentDescription = "Mute",
@@ -503,14 +549,14 @@ private fun OrbTab(
                             )
                         }
                     }
-                    Spacer(modifier = Modifier.width(16.dp))
+                    Spacer(modifier = Modifier.width(14.dp))
                 }
 
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier
-                        .height(56.dp)
-                        .width(186.dp)
+                        .height(52.dp)
+                        .width(180.dp)
                         .clip(RoundedCornerShape(32.dp))
                         .background(
                             if (isActive) {
@@ -532,16 +578,16 @@ private fun OrbTab(
                             text = if (isActive) "END CALL" else "START CALL",
                             color = Color.White,
                             fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp,
+                            fontSize = 14.sp,
                             letterSpacing = 1.4.sp
                         )
                     }
                 }
 
                 if (isActive) {
-                    Spacer(modifier = Modifier.width(16.dp))
+                    Spacer(modifier = Modifier.width(14.dp))
                     GlassCard(shape = CircleShape, accentBorder = NeonPink) {
-                        IconButton(onClick = onInterruptClick, modifier = Modifier.size(50.dp)) {
+                        IconButton(onClick = onInterruptClick, modifier = Modifier.size(48.dp)) {
                             Icon(Icons.Rounded.GraphicEq, contentDescription = "Interrupt", tint = NeonPink)
                         }
                     }
@@ -612,7 +658,6 @@ private fun PersonasTab(
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        // Quick Female Voice Strip
         Row(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier
@@ -964,7 +1009,7 @@ private fun LogsTab(
     onClearLogs: () -> Unit,
     onClearTranscripts: () -> Unit
 ) {
-    var subTab by remember { mutableIntStateOf(0) } // 0 = Live Logs, 1 = Saved Call Transcripts
+    var subTab by remember { mutableIntStateOf(0) }
 
     Column(modifier = Modifier.fillMaxSize()) {
         Row(
