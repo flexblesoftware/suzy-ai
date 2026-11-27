@@ -12,34 +12,42 @@ import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.media.AudioAttributes
+import android.media.AudioFormat
+import android.media.AudioManager
+import android.media.AudioTrack
 import android.net.Uri
 import android.os.Build
-import android.os.Bundle
 import android.os.IBinder
+import android.os.PowerManager
 import android.provider.ContactsContract
-import android.speech.tts.TextToSpeech
 import android.telephony.TelephonyManager
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.suzy.ai.MainActivity
 import com.suzy.ai.data.SettingsRepository
+import com.suzy.ai.data.SuzyCatalog
+import com.suzy.ai.network.GeminiLiveClient
 import com.suzy.ai.receiver.IncomingCallReceiver
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-data class AnnouncedCallRecord(
-    val callerName: String,
+data class AnnouncedEventRecord(
+    val category: String,
+    val title: String,
     val time: String,
-    val spokenText: String
+    val summary: String
 )
 
 object AnnouncerStateBridge {
@@ -47,24 +55,38 @@ object AnnouncerStateBridge {
     var isGuardRunning: Boolean = false
 
     @Volatile
-    var lastAnnouncement: AnnouncedCallRecord? = null
+    var isLiveCallSessionActive: Boolean = false
+
+    @Volatile
+    var lastAnnouncement: AnnouncedEventRecord? = null
 
     @Volatile
     var onPhoneCallIncomingDuringLiveSession: ((String) -> Unit)? = null
+
+    @Volatile
+    var onInjectPromptIntoActiveLiveSession: ((String) -> Boolean)? = null
 }
 
-class CallAnnouncerService : Service(), TextToSpeech.OnInitListener {
+class CallAnnouncerService : Service() {
 
     companion object {
         const val CHANNEL_ID = "suzy_call_guard_channel"
         const val NOTIFICATION_ID = 3802
+
         const val ACTION_START_GUARD = "com.suzy.ai.action.START_GUARD"
         const val ACTION_RINGING = "com.suzy.ai.action.RINGING"
         const val ACTION_STOP_SPEAKING = "com.suzy.ai.action.STOP_SPEAKING"
-        const val ACTION_TEST_ANNOUNCE = "com.suzy.ai.action.TEST_ANNOUNCE"
-        const val ACTION_SPEAK_CUSTOM = "com.suzy.ai.action.SPEAK_CUSTOM"
+        const val ACTION_NOTIFICATION_EVENT = "com.suzy.ai.action.NOTIFICATION_EVENT"
+        const val ACTION_TEST_CALL = "com.suzy.ai.action.TEST_CALL"
+        const val ACTION_TEST_NOTIFICATION = "com.suzy.ai.action.TEST_NOTIFICATION"
+        const val ACTION_GEMINI_ALERT = "com.suzy.ai.action.GEMINI_ALERT"
+
         const val EXTRA_NUMBER = "extra_number"
-        const val EXTRA_TEXT = "extra_text"
+        const val EXTRA_APP_NAME = "extra_app_name"
+        const val EXTRA_TITLE = "extra_title"
+        const val EXTRA_BODY = "extra_body"
+        const val EXTRA_CATEGORY = "extra_category"
+        const val EXTRA_PROMPT = "extra_prompt"
 
         fun startGuard(context: Context) {
             val intent = Intent(context, CallAnnouncerService::class.java).apply {
@@ -105,9 +127,17 @@ class CallAnnouncerService : Service(), TextToSpeech.OnInitListener {
             }
         }
 
-        fun triggerTestAnnouncement(context: Context) {
+        fun onNotificationArrived(
+            context: Context,
+            appName: String,
+            senderTitle: String,
+            messageBody: String
+        ) {
             val intent = Intent(context, CallAnnouncerService::class.java).apply {
-                action = ACTION_TEST_ANNOUNCE
+                action = ACTION_NOTIFICATION_EVENT
+                putExtra(EXTRA_APP_NAME, appName)
+                putExtra(EXTRA_TITLE, senderTitle)
+                putExtra(EXTRA_BODY, messageBody)
             }
             try {
                 ContextCompat.startForegroundService(context, intent)
@@ -115,10 +145,32 @@ class CallAnnouncerService : Service(), TextToSpeech.OnInitListener {
             }
         }
 
-        fun speakCustomMessage(context: Context, message: String) {
+        fun triggerTestCallAnnouncement(context: Context) {
             val intent = Intent(context, CallAnnouncerService::class.java).apply {
-                action = ACTION_SPEAK_CUSTOM
-                putExtra(EXTRA_TEXT, message)
+                action = ACTION_TEST_CALL
+            }
+            try {
+                ContextCompat.startForegroundService(context, intent)
+            } catch (_: Exception) {
+            }
+        }
+
+        fun triggerTestNotificationAnnouncement(context: Context) {
+            val intent = Intent(context, CallAnnouncerService::class.java).apply {
+                action = ACTION_TEST_NOTIFICATION
+            }
+            try {
+                ContextCompat.startForegroundService(context, intent)
+            } catch (_: Exception) {
+            }
+        }
+
+        fun triggerGeminiVoiceAlert(context: Context, category: String, title: String, prompt: String) {
+            val intent = Intent(context, CallAnnouncerService::class.java).apply {
+                action = ACTION_GEMINI_ALERT
+                putExtra(EXTRA_CATEGORY, category)
+                putExtra(EXTRA_TITLE, title)
+                putExtra(EXTRA_PROMPT, prompt)
             }
             try {
                 ContextCompat.startForegroundService(context, intent)
@@ -127,49 +179,24 @@ class CallAnnouncerService : Service(), TextToSpeech.OnInitListener {
         }
     }
 
-    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-    private var tts: TextToSpeech? = null
-    private var ttsReady: Boolean = false
-    private var pendingSpeech: String? = null
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var dynamicReceiver: IncomingCallReceiver? = null
     private var ringDebounceJob: Job? = null
+    private var activeAnnouncementJob: Job? = null
+    private var activeOneShotClient: GeminiLiveClient? = null
+    private var activeOneShotTrack: AudioTrack? = null
     private var activeRingingResolved: Boolean = false
 
     override fun onCreate() {
         super.onCreate()
         AnnouncerStateBridge.isGuardRunning = true
         createChannel()
-        startForegroundCompat(buildNotification("Call Announcer & Screen-Off Guard Active"))
-        tts = TextToSpeech(applicationContext, this)
+        startForegroundCompat(buildNotification("Gemini AI Voice Announcer & Guard Active"))
         registerDynamicReceiver()
     }
 
-    override fun onInit(status: Int) {
-        if (status == TextToSpeech.SUCCESS) {
-            val hiLocale = Locale("hi", "IN")
-            val enInLocale = Locale("en", "IN")
-            val res = tts?.setLanguage(hiLocale)
-            if (res == TextToSpeech.LANG_MISSING_DATA || res == TextToSpeech.LANG_NOT_SUPPORTED) {
-                tts?.setLanguage(enInLocale)
-            }
-            tts?.setPitch(1.12f)
-            tts?.setSpeechRate(1.02f)
-            tts?.setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                    .build()
-            )
-            ttsReady = true
-            pendingSpeech?.let {
-                pendingSpeech = null
-                speakNow(it)
-            }
-        }
-    }
-
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        startForegroundCompat(buildNotification("Call Announcer & Screen-Off Guard Active"))
+        startForegroundCompat(buildNotification("Gemini AI Voice Announcer & Guard Active"))
 
         when (intent?.action) {
             ACTION_RINGING -> {
@@ -179,27 +206,63 @@ class CallAnnouncerService : Service(), TextToSpeech.OnInitListener {
             ACTION_STOP_SPEAKING -> {
                 ringDebounceJob?.cancel()
                 activeRingingResolved = false
-                try {
-                    tts?.stop()
-                } catch (_: Exception) {
-                }
+                stopOneShotPlayback()
             }
-            ACTION_TEST_ANNOUNCE -> {
+            ACTION_NOTIFICATION_EVENT -> {
+                val appName = intent.getStringExtra(EXTRA_APP_NAME).orEmpty().ifBlank { "App" }
+                val title = intent.getStringExtra(EXTRA_TITLE).orEmpty()
+                val body = intent.getStringExtra(EXTRA_BODY).orEmpty()
+                handleIncomingNotification(appName, title, body)
+            }
+            ACTION_TEST_CALL -> {
                 serviceScope.launch {
                     val repo = SettingsRepository(applicationContext)
                     val s = repo.settingsFlow.first()
-                    val msg = buildAnnouncementLine(
+                    val prompt = buildCallAnnouncementPrompt(
+                        personaName = s.activePersonaName,
                         callerLabel = "Best Friend",
                         style = s.announcerStyle,
-                        includeName = true
+                        includeName = true,
+                        repeatCount = 1
                     )
-                    recordAndSpeak(callerLabel = "Best Friend (Test)", spokenText = msg, repeatCount = 1)
+                    dispatchGeminiVoiceAnnouncement(
+                        category = "CALL TEST",
+                        displayTitle = "Best Friend",
+                        displaySummary = "Gemini AI Voice Call Alert (${s.activePersonaName} • ${s.voiceName})",
+                        prompt = prompt
+                    )
                 }
             }
-            ACTION_SPEAK_CUSTOM -> {
-                val text = intent.getStringExtra(EXTRA_TEXT).orEmpty()
-                if (text.isNotBlank()) {
-                    speakNow(text)
+            ACTION_TEST_NOTIFICATION -> {
+                serviceScope.launch {
+                    val repo = SettingsRepository(applicationContext)
+                    val s = repo.settingsFlow.first()
+                    val prompt = buildNotificationAnnouncementPrompt(
+                        personaName = s.activePersonaName,
+                        appName = "WhatsApp",
+                        senderTitle = "Aarav",
+                        messageBody = "Bhai aaj shaam ko milte hain, free ho kya?",
+                        readBody = true
+                    )
+                    dispatchGeminiVoiceAnnouncement(
+                        category = "NOTIF TEST",
+                        displayTitle = "WhatsApp • Aarav",
+                        displaySummary = "Bhai aaj shaam ko milte hain, free ho kya?",
+                        prompt = prompt
+                    )
+                }
+            }
+            ACTION_GEMINI_ALERT -> {
+                val category = intent.getStringExtra(EXTRA_CATEGORY).orEmpty().ifBlank { "ALERT" }
+                val title = intent.getStringExtra(EXTRA_TITLE).orEmpty().ifBlank { "Suzy Alert" }
+                val prompt = intent.getStringExtra(EXTRA_PROMPT).orEmpty()
+                if (prompt.isNotBlank()) {
+                    dispatchGeminiVoiceAnnouncement(
+                        category = category,
+                        displayTitle = title,
+                        displaySummary = title,
+                        prompt = prompt
+                    )
                 }
             }
         }
@@ -213,7 +276,7 @@ class CallAnnouncerService : Service(), TextToSpeech.OnInitListener {
                 delay(420L)
                 if (!activeRingingResolved) {
                     activeRingingResolved = true
-                    executeIncomingAnnouncement("")
+                    executeIncomingCallAnnouncement("")
                 }
             }
             return
@@ -222,11 +285,11 @@ class CallAnnouncerService : Service(), TextToSpeech.OnInitListener {
         if (rawNumber.isNotBlank() && !activeRingingResolved) {
             ringDebounceJob?.cancel()
             activeRingingResolved = true
-            executeIncomingAnnouncement(rawNumber)
+            executeIncomingCallAnnouncement(rawNumber)
         }
     }
 
-    private fun executeIncomingAnnouncement(number: String) {
+    private fun executeIncomingCallAnnouncement(number: String) {
         serviceScope.launch {
             val repo = SettingsRepository(applicationContext)
             val s = repo.settingsFlow.first()
@@ -238,80 +301,286 @@ class CallAnnouncerService : Service(), TextToSpeech.OnInitListener {
                 ""
             }
 
-            AnnouncerStateBridge.onPhoneCallIncomingDuringLiveSession?.invoke(
-                callerName.ifBlank { "Incoming Call" }
-            )
+            val label = callerName.ifBlank { "Unknown Caller" }
+            AnnouncerStateBridge.onPhoneCallIncomingDuringLiveSession?.invoke(label)
 
-            val spoken = buildAnnouncementLine(
-                callerLabel = callerName,
+            val prompt = buildCallAnnouncementPrompt(
+                personaName = s.activePersonaName,
+                callerLabel = label,
                 style = s.announcerStyle,
-                includeName = s.announceCallerName && callerName.isNotBlank()
-            )
-            recordAndSpeak(
-                callerLabel = callerName.ifBlank { "Unknown Caller" },
-                spokenText = spoken,
+                includeName = s.announceCallerName && callerName.isNotBlank(),
                 repeatCount = s.announcerRepeatCount.coerceIn(1, 3)
             )
+            dispatchGeminiVoiceAnnouncement(
+                category = "INCOMING CALL",
+                displayTitle = label,
+                displaySummary = "Incoming call announced via Gemini ${s.voiceName}",
+                prompt = prompt
+            )
         }
     }
 
-    private fun buildAnnouncementLine(
+    private fun handleIncomingNotification(appName: String, senderTitle: String, messageBody: String) {
+        serviceScope.launch {
+            val repo = SettingsRepository(applicationContext)
+            val s = repo.settingsFlow.first()
+            if (!s.notificationReaderEnabled) return@launch
+
+            val cleanSender = senderTitle.take(60)
+            val cleanBody = messageBody.take(160)
+            val summary = if (s.readNotificationContent && cleanBody.isNotBlank()) {
+                if (cleanSender.isNotBlank()) "$cleanSender: $cleanBody" else cleanBody
+            } else {
+                if (cleanSender.isNotBlank()) "New message from $cleanSender" else "New notification on $appName"
+            }
+
+            val prompt = buildNotificationAnnouncementPrompt(
+                personaName = s.activePersonaName,
+                appName = appName,
+                senderTitle = cleanSender,
+                messageBody = cleanBody,
+                readBody = s.readNotificationContent
+            )
+
+            dispatchGeminiVoiceAnnouncement(
+                category = appName.uppercase(),
+                displayTitle = if (cleanSender.isNotBlank()) "$appName • $cleanSender" else appName,
+                displaySummary = summary,
+                prompt = prompt
+            )
+        }
+    }
+
+    private fun buildCallAnnouncementPrompt(
+        personaName: String,
         callerLabel: String,
         style: String,
-        includeName: Boolean
+        includeName: Boolean,
+        repeatCount: Int
     ): String {
+        val repeatNote = if (repeatCount > 1) {
+            "Is baat ko pyaar se $repeatCount baar repeat karke bolo taaki user turant sun le."
+        } else {
+            "Sirf 1-2 chhoti, natural lines mein bolo."
+        }
+
         return when (style) {
             "Jarvis" -> {
-                if (includeName) "Attention. Incoming call from $callerLabel."
-                else "Attention. You have an incoming phone call."
-            }
-            "Bestie" -> {
-                if (includeName) "Oye sun! $callerLabel ka call aa raha hai, jaldi phone uthao!"
-                else "Oye sun! Phone baj raha hai, kisi ka call aa raha hai!"
-            }
-            else -> {
-                if (includeName) "Suno jaan, $callerLabel ka call aa raha hai. Phone uthao na!"
-                else "Suno jaan, tumhara phone baj raha hai, call aa rahi hai!"
-            }
-        }
-    }
-
-    private fun recordAndSpeak(callerLabel: String, spokenText: String, repeatCount: Int) {
-        val ts = SimpleDateFormat("hh:mm a", Locale.getDefault()).format(Date())
-        AnnouncerStateBridge.lastAnnouncement = AnnouncedCallRecord(
-            callerName = callerLabel,
-            time = ts,
-            spokenText = spokenText
-        )
-        startForegroundCompat(buildNotification("Last call: $callerLabel ($ts)"))
-
-        if (!ttsReady) {
-            pendingSpeech = spokenText
-            return
-        }
-
-        try {
-            tts?.stop()
-            val params = Bundle()
-            for (i in 0 until repeatCount) {
-                val queueMode = if (i == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD
-                tts?.speak(spokenText, queueMode, params, "suzy_call_announce_$i")
-                if (i < repeatCount - 1) {
-                    tts?.playSilentUtterance(1100L, TextToSpeech.QUEUE_ADD, "suzy_pause_$i")
+                if (includeName) {
+                    "Tum $personaName ho. Smart, warm aur crisp Hinglish-English mein user ko alert do ki '$callerLabel' ka incoming phone call aa raha hai. $repeatNote"
+                } else {
+                    "Tum $personaName ho. Smart, warm aur crisp Hinglish-English mein alert do ki phone par incoming call aa raha hai. $repeatNote"
                 }
             }
-        } catch (_: Exception) {
+            "Bestie" -> {
+                if (includeName) {
+                    "Tum $personaName ho. Full energetic aur bindass Indian bestie style mein Hinglish mein bolo: 'Oye sun! $callerLabel ka call aa raha hai, jaldi phone uthao!' $repeatNote"
+                } else {
+                    "Tum $personaName ho. Full energetic Indian bestie style mein Hinglish mein bolo ki phone baj raha hai, kisi ka call aa raha hai, jaldi uthao! $repeatNote"
+                }
+            }
+            else -> {
+                if (includeName) {
+                    "Tum $personaName ho. Apne pyaare, soft aur affectionate Indian girlfriend andaaz mein Hinglish mein bolo: 'Suno jaan, $callerLabel ka call aa raha hai, phone uthao na!' $repeatNote"
+                } else {
+                    "Tum $personaName ho. Apne pyaare, soft aur affectionate Indian girlfriend andaaz mein Hinglish mein bolo: 'Suno jaan, tumhara phone baj raha hai, call aa rahi hai!' $repeatNote"
+                }
+            }
         }
     }
 
-    private fun speakNow(text: String) {
-        if (!ttsReady) {
-            pendingSpeech = text
-            return
+    private fun buildNotificationAnnouncementPrompt(
+        personaName: String,
+        appName: String,
+        senderTitle: String,
+        messageBody: String,
+        readBody: Boolean
+    ): String {
+        return if (readBody && messageBody.isNotBlank()) {
+            val fromPart = if (senderTitle.isNotBlank()) " '$senderTitle' ka" else ""
+            "Tum $personaName ho. Abhi user ke phone par $appName par$fromPart notification aaya hai aur message likha hai: \"$messageBody\". Apne natural Hinglish persona style mein user ko pyar se batao ki $appName par kiska notification aaya hai aur yeh message padh kar sunao. Jawab chhota aur clear (1-2 lines) rakho."
+        } else {
+            val fromPart = if (senderTitle.isNotBlank()) " '$senderTitle' se" else ""
+            "Tum $personaName ho. Abhi user ke phone par $appName par$fromPart naya notification aaya hai. Apne natural Hinglish persona style mein 1 chhoti line mein user ko batao ki $appName par$fromPart notification aaya hai (message text mat padhna)."
         }
+    }
+
+    private fun dispatchGeminiVoiceAnnouncement(
+        category: String,
+        displayTitle: String,
+        displaySummary: String,
+        prompt: String
+    ) {
+        val ts = SimpleDateFormat("hh:mm a", Locale.getDefault()).format(Date())
+        AnnouncerStateBridge.lastAnnouncement = AnnouncedEventRecord(
+            category = category,
+            title = displayTitle,
+            time = ts,
+            summary = displaySummary
+        )
+        startForegroundCompat(buildNotification("$category: $displayTitle ($ts)"))
+
+        // 1. If live call session is already open in app, speak directly through active Gemini session
+        if (AnnouncerStateBridge.isLiveCallSessionActive) {
+            val injected = AnnouncerStateBridge.onInjectPromptIntoActiveLiveSession?.invoke(prompt) ?: false
+            if (injected) return
+        }
+
+        // 2. Otherwise spin up real Gemini Live Voice one-shot stream in background (works screen-off!)
+        activeAnnouncementJob?.cancel()
+        stopOneShotPlayback()
+
+        activeAnnouncementJob = serviceScope.launch {
+            val repo = SettingsRepository(applicationContext)
+            val s = repo.settingsFlow.first()
+            if (s.apiKey.isBlank()) {
+                startForegroundCompat(buildNotification("Gemini API Key missing in AI Config"))
+                return@launch
+            }
+
+            val wakeLock = acquireShortWakeLock()
+            try {
+                runOneShotGeminiVoice(s, prompt)
+            } finally {
+                stopOneShotPlayback()
+                try {
+                    if (wakeLock?.isHeld == true) wakeLock.release()
+                } catch (_: Exception) {
+                }
+            }
+        }
+    }
+
+    private suspend fun runOneShotGeminiVoice(
+        baseSettings: com.suzy.ai.data.SuzySettings,
+        prompt: String
+    ) {
+        val hardcodedPersona = SuzyCatalog.resolveHardcodedPrompt(
+            baseSettings.activePersonaName,
+            baseSettings.systemPrompt
+        )
+        val announcementSettings = baseSettings.copy(
+            systemPrompt = "$hardcodedPersona\n\n[ANNOUNCEMENT MODE]: Tum abhi user ke phone par aaye live alert ko apni asli aawaz mein announce kar rahi ho. Seedha aur natural Hinglish mein bolo."
+        )
+
+        val sampleRate = 24000
+        val minBuf = AudioTrack.getMinBufferSize(
+            sampleRate,
+            AudioFormat.CHANNEL_OUT_MONO,
+            AudioFormat.ENCODING_PCM_16BIT
+        ).coerceAtLeast(2400)
+
+        val track = AudioTrack.Builder()
+            .setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .build()
+            )
+            .setAudioFormat(
+                AudioFormat.Builder()
+                    .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                    .setSampleRate(sampleRate)
+                    .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                    .build()
+            )
+            .setBufferSizeInBytes(minBuf * 2)
+            .setTransferMode(AudioTrack.MODE_STREAM)
+            .build()
+
+        activeOneShotTrack = track
+        track.play()
+
+        val pcmChannel = Channel<ByteArray>(Channel.UNLIMITED)
+        val doneSignal = Channel<Unit>(1)
+
+        var firstChunkTimeMs = 0L
+        var totalBytesQueued = 0L
+
+        val writerJob = serviceScope.launch {
+            for (chunk in pcmChannel) {
+                if (!isActive) break
+                try {
+                    track.write(chunk, 0, chunk.size)
+                } catch (_: Exception) {
+                }
+            }
+        }
+
+        val client = GeminiLiveClient(
+            onConnected = {
+                activeOneShotClient?.sendReactionPrompt(prompt)
+            },
+            onAudioOutput = { pcm ->
+                if (firstChunkTimeMs == 0L) {
+                    firstChunkTimeMs = System.currentTimeMillis()
+                }
+                totalBytesQueued += pcm.size.toLong()
+                pcmChannel.trySend(pcm)
+            },
+            onTextOutput = { },
+            onToolCall = { _, _, _ -> },
+            onInterrupted = { },
+            onTurnComplete = {
+                doneSignal.trySend(Unit)
+            },
+            onError = {
+                doneSignal.trySend(Unit)
+            },
+            onClosed = {
+                doneSignal.trySend(Unit)
+            }
+        )
+
+        activeOneShotClient = client
+        client.connect(announcementSettings)
+
+        // Wait up to 14 seconds for Gemini Live voice turn to complete
+        withTimeoutOrNull(14000L) {
+            doneSignal.receive()
+        }
+
+        // Let remaining buffered 24kHz PCM audio finish playing smoothly before closing track
+        if (firstChunkTimeMs > 0L && totalBytesQueued > 0L) {
+            val expectedDurationMs = (totalBytesQueued / 48L) + 450L
+            val elapsedMs = System.currentTimeMillis() - firstChunkTimeMs
+            val remainingMs = (expectedDurationMs - elapsedMs).coerceIn(0L, 10000L)
+            if (remainingMs > 0L) {
+                delay(remainingMs)
+            }
+        }
+
+        pcmChannel.close()
+        writerJob.cancel()
+        client.disconnect()
+    }
+
+    private fun stopOneShotPlayback() {
         try {
-            tts?.speak(text, TextToSpeech.QUEUE_FLUSH, Bundle(), "suzy_custom_utterance")
+            activeOneShotClient?.disconnect()
         } catch (_: Exception) {
+        }
+        activeOneShotClient = null
+
+        try {
+            activeOneShotTrack?.pause()
+            activeOneShotTrack?.flush()
+            activeOneShotTrack?.stop()
+            activeOneShotTrack?.release()
+        } catch (_: Exception) {
+        }
+        activeOneShotTrack = null
+    }
+
+    private fun acquireShortWakeLock(): PowerManager.WakeLock? {
+        return try {
+            val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+            pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "SuzyAI::GeminiAnnounceLock").apply {
+                setReferenceCounted(false)
+                acquire(25_000L)
+            }
+        } catch (_: Exception) {
+            null
         }
     }
 
@@ -391,7 +660,7 @@ class CallAnnouncerService : Service(), TextToSpeech.OnInitListener {
         )
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_menu_call)
-            .setContentTitle("Suzy Background Guard")
+            .setContentTitle("Suzy Gemini Voice Guard")
             .setContentText(subtitle)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
@@ -404,10 +673,10 @@ class CallAnnouncerService : Service(), TextToSpeech.OnInitListener {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val ch = NotificationChannel(
                 CHANNEL_ID,
-                "Suzy Background Call Guard",
+                "Suzy Gemini Voice Guard",
                 NotificationManager.IMPORTANCE_MIN
             ).apply {
-                description = "Keeps incoming call voice announcer ready in background"
+                description = "Keeps Gemini AI Voice Call & Notification Announcer active in background"
             }
             val nm = getSystemService(NotificationManager::class.java)
             nm?.createNotificationChannel(ch)
@@ -416,13 +685,11 @@ class CallAnnouncerService : Service(), TextToSpeech.OnInitListener {
 
     override fun onDestroy() {
         AnnouncerStateBridge.isGuardRunning = false
+        ringDebounceJob?.cancel()
+        activeAnnouncementJob?.cancel()
+        stopOneShotPlayback()
         try {
             dynamicReceiver?.let { unregisterReceiver(it) }
-        } catch (_: Exception) {
-        }
-        try {
-            tts?.stop()
-            tts?.shutdown()
         } catch (_: Exception) {
         }
         serviceScope.cancel()

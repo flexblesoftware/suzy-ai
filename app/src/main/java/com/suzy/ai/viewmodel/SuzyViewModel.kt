@@ -12,7 +12,7 @@ import com.suzy.ai.data.SettingsRepository
 import com.suzy.ai.data.SuzyCatalog
 import com.suzy.ai.data.SuzySettings
 import com.suzy.ai.network.GeminiLiveClient
-import com.suzy.ai.service.AnnouncedCallRecord
+import com.suzy.ai.service.AnnouncedEventRecord
 import com.suzy.ai.service.AnnouncerStateBridge
 import com.suzy.ai.service.CallAnnouncerService
 import com.suzy.ai.service.CallServiceBridge
@@ -60,7 +60,7 @@ data class SuzyUiState(
     val timerRemainingSec: Long = 0L,
     val isTimerRunning: Boolean = false,
     val isGuardRunning: Boolean = false,
-    val lastAnnouncedCall: AnnouncedCallRecord? = null,
+    val lastAnnouncedEvent: AnnouncedEventRecord? = null,
     val permissions: AppPermissionsStatus = AppPermissionsStatus(),
     val toolFeedback: String = ""
 )
@@ -113,6 +113,7 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
     init {
         CallServiceBridge.onToggleMuteRequested = { toggleMute() }
         CallServiceBridge.onStopCallRequested = { stopSession() }
+
         AnnouncerStateBridge.onPhoneCallIncomingDuringLiveSession = { caller ->
             if (isSessionActive() && !_uiState.value.isMuted) {
                 toggleMute()
@@ -120,6 +121,19 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
             }
             refreshGuardAndPermissions()
         }
+
+        AnnouncerStateBridge.onInjectPromptIntoActiveLiveSession = { prompt ->
+            val client = liveClient
+            if (isSessionActive() && client != null) {
+                audioEngine.flushPlayback()
+                client.sendReactionPrompt(prompt)
+                refreshGuardAndPermissions()
+                true
+            } else {
+                false
+            }
+        }
+
         refreshDeviceTelemetry()
         refreshGuardAndPermissions()
     }
@@ -130,7 +144,7 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
             it.copy(
                 permissions = perms,
                 isGuardRunning = AnnouncerStateBridge.isGuardRunning,
-                lastAnnouncedCall = AnnouncerStateBridge.lastAnnouncement
+                lastAnnouncedEvent = AnnouncerStateBridge.lastAnnouncement
             )
         }
     }
@@ -191,9 +205,12 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 }
                 audioEngine.playUiChime(true)
-                CallAnnouncerService.speakCustomMessage(
-                    appContext,
-                    "Suno jaan, tumhara $minutes minute ka timer poora ho gaya hai!"
+                val personaName = settings.value.activePersonaName
+                CallAnnouncerService.triggerGeminiVoiceAlert(
+                    context = appContext,
+                    category = "TIMER ALERT",
+                    title = "$minutes min Timer Complete",
+                    prompt = "Tum $personaName ho. User ka $minutes minute ka timer abhi poora ho gaya hai! Apne natural Hinglish persona style mein pyar se batao ki timer khatam ho gaya hai (1 chhoti line mein)."
                 )
             }
         }
@@ -278,6 +295,7 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
             onConnected = {
                 if (gen != sessionGeneration) return@GeminiLiveClient
                 val activeName = targetSettings.activePersonaName
+                AnnouncerStateBridge.isLiveCallSessionActive = true
                 startCallTimer()
                 audioEngine.setSpeakerphone(_uiState.value.isSpeakerOn)
                 audioEngine.playUiChime(true)
@@ -362,6 +380,7 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
             },
             onError = { err ->
                 if (gen != sessionGeneration) return@GeminiLiveClient
+                AnnouncerStateBridge.isLiveCallSessionActive = false
                 audioEngine.releaseAll()
                 persistCurrentTranscriptIfAny()
                 stopCallTimer()
@@ -372,6 +391,7 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
             },
             onClosed = {
                 if (gen != sessionGeneration) return@GeminiLiveClient
+                AnnouncerStateBridge.isLiveCallSessionActive = false
                 audioEngine.releaseAll()
                 persistCurrentTranscriptIfAny()
                 stopCallTimer()
@@ -428,6 +448,7 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
 
     fun stopSession() {
         ++sessionGeneration
+        AnnouncerStateBridge.isLiveCallSessionActive = false
         audioEngine.playUiChime(false)
         liveClient?.disconnect()
         liveClient = null
@@ -547,6 +568,21 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun toggleNotificationReader(enabled: Boolean) {
+        val updated = settings.value.copy(notificationReaderEnabled = enabled)
+        viewModelScope.launch {
+            repo.saveSettings(updated)
+            if (enabled) syncBackgroundGuard(true)
+        }
+    }
+
+    fun toggleReadNotificationContent(enabled: Boolean) {
+        val updated = settings.value.copy(readNotificationContent = enabled)
+        viewModelScope.launch {
+            repo.saveSettings(updated)
+        }
+    }
+
     fun toggleBackgroundGuard(enabled: Boolean) {
         val updated = settings.value.copy(backgroundGuardEnabled = enabled)
         viewModelScope.launch {
@@ -556,9 +592,17 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun triggerTestCallAnnouncement() {
-        CallAnnouncerService.triggerTestAnnouncement(appContext)
+        CallAnnouncerService.triggerTestCallAnnouncement(appContext)
         viewModelScope.launch {
-            delay(400L)
+            delay(600L)
+            refreshGuardAndPermissions()
+        }
+    }
+
+    fun triggerTestNotificationAnnouncement() {
+        CallAnnouncerService.triggerTestNotificationAnnouncement(appContext)
+        viewModelScope.launch {
+            delay(600L)
             refreshGuardAndPermissions()
         }
     }
@@ -635,6 +679,8 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application) {
         CallServiceBridge.onToggleMuteRequested = null
         CallServiceBridge.onStopCallRequested = null
         AnnouncerStateBridge.onPhoneCallIncomingDuringLiveSession = null
+        AnnouncerStateBridge.onInjectPromptIntoActiveLiveSession = null
+        AnnouncerStateBridge.isLiveCallSessionActive = false
         stopSession()
     }
 }

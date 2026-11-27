@@ -2,6 +2,7 @@ package com.suzy.ai.util
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -10,12 +11,14 @@ import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
 import androidx.core.content.ContextCompat
+import com.suzy.ai.service.SuzyNotificationListenerService
 
 data class AppPermissionsStatus(
     val micGranted: Boolean = false,
     val phoneStateGranted: Boolean = false,
     val contactsGranted: Boolean = false,
     val notificationsGranted: Boolean = false,
+    val notificationListenerGranted: Boolean = false,
     val batteryUnrestricted: Boolean = false
 ) {
     val grantedCount: Int
@@ -24,11 +27,12 @@ data class AppPermissionsStatus(
             phoneStateGranted,
             contactsGranted,
             notificationsGranted,
+            notificationListenerGranted,
             batteryUnrestricted
         ).count { it }
 
     val allGranted: Boolean
-        get() = grantedCount == 5
+        get() = grantedCount == 6
 }
 
 object PermissionHelper {
@@ -58,6 +62,8 @@ object PermissionHelper {
             true
         }
 
+        val listenerEnabled = isNotificationListenerEnabled(context)
+
         val battery = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             val pm = context.getSystemService(Context.POWER_SERVICE) as PowerManager
             pm.isIgnoringBatteryOptimizations(context.packageName)
@@ -70,8 +76,34 @@ object PermissionHelper {
             phoneStateGranted = phone,
             contactsGranted = contacts,
             notificationsGranted = notif,
+            notificationListenerGranted = listenerEnabled,
             batteryUnrestricted = battery
         )
+    }
+
+    fun isNotificationListenerEnabled(context: Context): Boolean {
+        return try {
+            val enabledListeners = Settings.Secure.getString(
+                context.contentResolver,
+                "enabled_notification_listeners"
+            ) ?: return false
+            val myComponent = ComponentName(context, SuzyNotificationListenerService::class.java)
+            enabledListeners.contains(myComponent.flattenToString()) ||
+                enabledListeners.contains(myComponent.flattenToShortString())
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    fun openNotificationListenerSettings(context: Context) {
+        try {
+            val intent = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+        } catch (_: Exception) {
+            openAppDetailsSettings(context)
+        }
     }
 
     fun requiredRuntimePermissions(): Array<String> {

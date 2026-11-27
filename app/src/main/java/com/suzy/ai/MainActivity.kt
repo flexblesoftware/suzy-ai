@@ -133,10 +133,16 @@ class MainActivity : ComponentActivity() {
                         onToggleAnnounceCallerName = { vm.toggleAnnounceCallerName(it) },
                         onSetAnnouncerRepeat = { vm.setAnnouncerRepeat(it) },
                         onSetAnnouncerStyle = { vm.setAnnouncerStyle(it) },
+                        onToggleNotificationReader = { vm.toggleNotificationReader(it) },
+                        onToggleReadNotificationContent = { vm.toggleReadNotificationContent(it) },
                         onToggleBackgroundGuard = { vm.toggleBackgroundGuard(it) },
                         onTestCallAnnouncement = { vm.triggerTestCallAnnouncement() },
+                        onTestNotificationAnnouncement = { vm.triggerTestNotificationAnnouncement() },
                         onRequestAllPermissions = {
                             multiPermissionLauncher.launch(PermissionHelper.requiredRuntimePermissions())
+                        },
+                        onRequestNotificationListener = {
+                            PermissionHelper.openNotificationListenerSettings(this@MainActivity)
                         },
                         onRequestBatteryExemption = {
                             PermissionHelper.requestIgnoreBatteryOptimizations(this@MainActivity)
