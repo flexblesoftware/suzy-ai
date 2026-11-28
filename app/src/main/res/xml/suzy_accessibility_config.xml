@@ -5,5 +5,5 @@
     android:accessibilityFlags="flagDefault|flagRetrieveInteractiveWindows|flagReportViewIds"
     android:canPerformGestures="true"
     android:canRetrieveWindowContent="true"
-    android:description="Suzy AI Accessibility Commander — Mobile Data, Hotspot, Wi-Fi, Lock Screen, Screenshot &amp; Scroll"
+    android:description="@string/suzy_accessibility_description"
     android:notificationTimeout="100" />
