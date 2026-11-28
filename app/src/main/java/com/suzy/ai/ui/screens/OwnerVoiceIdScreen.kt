@@ -184,8 +184,6 @@ fun OwnerVoiceIdScreen(
                         if (master == null) {
                             Toast.makeText(context, "Pehle kam se kam 1 voice sample record karein", Toast.LENGTH_SHORT).show()
                         } else {
-                            val liveFeat = VoiceprintEngine.recordVoiceSample(context, null, 100L) { _, _, _ -> }.getOrNull()
-                            // Use the features we just extracted!
                             val outcome = VoiceprintEngine.compareWithOwner(
                                 enrolled = master,
                                 live = res.getOrThrow(),

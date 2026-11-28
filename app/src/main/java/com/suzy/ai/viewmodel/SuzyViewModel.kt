@@ -111,7 +111,7 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application), S
                 CallAnnouncerService.startGuard(appContext)
                 refreshGuardAndPermissions()
                 _uiState.update {
-                    if (!isSessionActive()) it.copy(statusText = "Say "${settings.value.customWakePhrase}" or Tap Start Call") else it
+                    if (!isSessionActive()) it.copy(statusText = "Say \"${settings.value.customWakePhrase}\" or Tap Start Call") else it
                 }
             }
         }
