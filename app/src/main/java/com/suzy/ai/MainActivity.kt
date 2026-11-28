@@ -118,6 +118,7 @@ class MainActivity : ComponentActivity() {
                         current = settings,
                         initialStudioSection = initialStudioSection,
                         onSave = { vm.updateSettings(it) },
+                        onRunCommand = { vm.executeOmniCommand(it, speakResponse = false) },
                         onBack = { showSettings = false }
                     )
                 } else {

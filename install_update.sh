@@ -1,9 +1,11 @@
 #!/data/data/com.termux/files/usr/bin/bash
 set -e
-echo "[1/3] Applying Suzy AI v4.0 Omni-OS (150 Modules + South Hero Vikram + Chat + Voice Control)..."
+echo "[1/4] Patching AndroidManifest.xml with Accessibility Commander & Special Permissions..."
+python3 patch_manifest_and_push.py
+echo "[2/4] Staging all 174 Omni-OS modules..."
 git add -A
-git commit -m "Upgrade to Suzy AI v4.0 Omni-OS: 150 dedicated modules, South Hero Vikram persona, full Chat tab, Owner Voice ID & live ORB/UI morphing" || true
-echo "[2/3] Pushing to GitHub..."
+git commit -m "Suzy AI v4.2 Omni-OS: Permission Manager, Accessibility Commander, Real Voice/Hardware Commands & Voiceprint DSP" || true
+echo "[3/4] Pushing to GitHub..."
 git push
-echo "[3/3] Watching GitHub Actions Cloud Build..."
+echo "[4/4] Watching GitHub Actions Cloud Build..."
 sleep 6 && gh run watch

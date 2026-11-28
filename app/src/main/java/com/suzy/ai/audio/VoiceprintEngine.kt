@@ -8,7 +8,6 @@ import android.media.AudioRecord
 import android.media.AudioTrack
 import android.media.MediaRecorder
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
@@ -68,7 +67,7 @@ object VoiceprintEngine {
     @SuppressLint("MissingPermission")
     suspend fun recordVoiceSample(
         context: Context,
-        slotIndex: Int?,
+        slotIndex: Int?, // null = live verification test only (don't overwrite enrolled slot)
         durationMs: Long = 3500L,
         onLiveTelemetry: (amplitudeNorm: Float, dbLevel: Float, progress: Float) -> Unit
     ): Result<VoiceprintFeatures> = withContext(Dispatchers.IO) {
@@ -108,6 +107,7 @@ object VoiceprintEngine {
                     System.arraycopy(chunkBuf, 0, capturedSamples, offset, readCount)
                     offset += readCount
 
+                    // Live RMS & dB calculation
                     var sumSq = 0.0
                     for (i in 0 until readCount) {
                         val s = chunkBuf[i].toDouble()
@@ -164,10 +164,11 @@ object VoiceprintEngine {
                 max(minBuf, pcmData.size),
                 AudioTrack.MODE_STATIC
             )
+
             track.write(pcmData, 0, pcmData.size)
             track.play()
             val durationMs = ((pcmData.size / 2L) * 1000L) / SAMPLE_RATE
-            delay(durationMs + 150L)
+            kotlinx.coroutines.delay(durationMs + 150L)
             track.stop()
             track.release()
         } catch (_: Exception) {
@@ -205,9 +206,11 @@ object VoiceprintEngine {
         live: VoiceprintFeatures,
         thresholdPercent: Int
     ): VoiceVerificationResult {
+        // 1. Pitch similarity (Gaussian tolerance ~26 Hz)
         val pitchDiff = abs(enrolled.pitchHz - live.pitchHz)
         val pitchSim = exp(-(pitchDiff * pitchDiff) / (2.0 * 26.0 * 26.0)).toFloat()
 
+        // 2. Spectral band timbre cosine similarity (Low / Mid / High vocal resonance)
         val dot = (enrolled.lowBandRatio * live.lowBandRatio) +
             (enrolled.midBandRatio * live.midBandRatio) +
             (enrolled.highBandRatio * live.highBandRatio)
@@ -223,6 +226,7 @@ object VoiceprintEngine {
         )
         val spectralSim = if (magA > 0f && magB > 0f) (dot / (magA * magB)).coerceIn(0f, 1f) else 0f
 
+        // 3. Zero-crossing cadence similarity
         val zcrDiff = abs(enrolled.zeroCrossingRate - live.zeroCrossingRate)
         val zcrSim = (1f - (zcrDiff / 0.18f)).coerceIn(0f, 1f)
 
@@ -245,7 +249,7 @@ object VoiceprintEngine {
 
     private fun extractAcousticFeatures(samples: ShortArray): VoiceprintFeatures? {
         if (samples.size < SAMPLE_RATE / 2) return null
-        val frameSize = 512
+        val frameSize = 512 // 32ms frame at 16kHz
         val pitches = mutableListOf<Float>()
         val zcrs = mutableListOf<Float>()
         var lowSum = 0.0
@@ -266,10 +270,11 @@ object VoiceprintEngine {
                 }
             }
             val rms = sqrt(rmsSum / frameSize)
-            if (rms > 420.0) {
+            if (rms > 420.0) { // Active speech frame (VAD)
                 voicedFrames++
                 zcrs.add(zeroCrossings.toFloat() / frameSize.toFloat())
 
+                // Autocorrelation pitch F0 (75 Hz to 310 Hz)
                 val minLag = SAMPLE_RATE / 310
                 val maxLag = SAMPLE_RATE / 75
                 var bestLag = -1
@@ -288,6 +293,7 @@ object VoiceprintEngine {
                     pitches.add(SAMPLE_RATE.toFloat() / bestLag.toFloat())
                 }
 
+                // Goertzel-style 3-band vocal resonance energy (220Hz chest, 1000Hz formant, 3200Hz air)
                 lowSum += goertzelEnergy(samples, idx, frameSize, 220.0)
                 midSum += goertzelEnergy(samples, idx, frameSize, 1000.0)
                 highSum += goertzelEnergy(samples, idx, frameSize, 3200.0)
@@ -339,8 +345,8 @@ object VoiceprintEngine {
             put("WAVE".toByteArray(Charsets.US_ASCII))
             put("fmt ".toByteArray(Charsets.US_ASCII))
             putInt(16)
-            putShort(1.toShort())
-            putShort(1.toShort())
+            putShort(1.toShort()) // PCM
+            putShort(1.toShort()) // Mono
             putInt(SAMPLE_RATE)
             putInt(byteRate)
             putShort(2.toShort())

@@ -4,10 +4,9 @@ import android.content.Context
 import android.content.Intent
 import android.media.AudioManager
 import android.net.Uri
-import android.os.Build
-import android.provider.Settings
 import com.suzy.ai.data.SuzyCatalog
 import com.suzy.ai.data.SuzySettings
+import com.suzy.ai.tools.SuzyTools
 import java.util.Locale
 
 data class CommandExecutionOutcome(
@@ -41,12 +40,12 @@ object OmniCommandRouter {
         context: Context,
         rawInput: String,
         currentSettings: SuzySettings,
-        isOwnerVerified: Boolean
+        isOwnerVerified: Boolean,
+        tools: SuzyTools = SuzyTools(context)
     ): CommandExecutionOutcome {
         val text = rawInput.trim()
         if (text.isBlank()) return CommandExecutionOutcome(false, "")
 
-        // Split chained commands on " aur ", " and ", " then ", or ","
         val segments = text.split(Regex("\\s+(?:aur|and|then)\\s+|,", RegexOption.IGNORE_CASE))
             .map { it.trim() }
             .filter { it.isNotBlank() }
@@ -71,7 +70,8 @@ object OmniCommandRouter {
                 context = context,
                 segment = seg,
                 settings = workingSettings,
-                isOwnerVerified = isOwnerVerified
+                isOwnerVerified = isOwnerVerified,
+                tools = tools
             )
             if (single.handled) {
                 summaries.add(single.summary)
@@ -115,7 +115,8 @@ object OmniCommandRouter {
         context: Context,
         segment: String,
         settings: SuzySettings,
-        isOwnerVerified: Boolean
+        isOwnerVerified: Boolean,
+        tools: SuzyTools
     ): CommandExecutionOutcome {
         val lower = segment.lowercase(Locale.US)
 
@@ -144,7 +145,103 @@ object OmniCommandRouter {
             )
         }
 
-        // 2. Emotional Attitude / Anger & Apology Engine (145-150)
+        // 2. Real Flashlight / Torch Control (Direct CameraManager)
+        if (lower.contains("flashlight") || lower.contains("torch") || lower.contains("flash light")) {
+            val turnOff = lower.contains("off") || lower.contains("band") || lower.contains("bujha")
+            val turnOn = !turnOff
+            val msg = tools.toggleFlashlight(turnOn)
+            return CommandExecutionOutcome(true, msg, toggleTorch = turnOn)
+        }
+
+        // 3. Real Do Not Disturb (DND) Mode Control
+        if (lower.contains("dnd") || lower.contains("do not disturb")) {
+            checkOwnerPermission("DND Mode")?.let { return it }
+            val turnOff = lower.contains("off") || lower.contains("band") || lower.contains("hatao")
+            val msg = tools.setDndMode(!turnOff)
+            return CommandExecutionOutcome(true, msg)
+        }
+
+        // 4. Real Mobile Data, Hotspot, Wi-Fi, Bluetooth, Airplane, Location
+        if (lower.contains("mobile data") || lower.contains("data on") || lower.contains("data off") || lower.contains("data band") || lower.contains("data chalu") || lower.contains("internet on") || lower.contains("internet off")) {
+            checkOwnerPermission("Mobile Data")?.let { return it }
+            return CommandExecutionOutcome(true, tools.controlConnectivity("data"))
+        }
+        if (lower.contains("hotspot")) {
+            checkOwnerPermission("Personal Hotspot")?.let { return it }
+            return CommandExecutionOutcome(true, tools.controlConnectivity("hotspot"))
+        }
+        if (lower.contains("wifi") || lower.contains("wi-fi")) {
+            checkOwnerPermission("Wi-Fi")?.let { return it }
+            return CommandExecutionOutcome(true, tools.controlConnectivity("wifi"))
+        }
+        if (lower.contains("bluetooth")) {
+            checkOwnerPermission("Bluetooth")?.let { return it }
+            return CommandExecutionOutcome(true, tools.controlConnectivity("bluetooth"))
+        }
+        if (lower.contains("airplane") || lower.contains("flight mode")) {
+            checkOwnerPermission("Airplane Mode")?.let { return it }
+            return CommandExecutionOutcome(true, tools.controlConnectivity("airplane"))
+        }
+        if (lower.contains("location on") || lower.contains("gps on") || lower.contains("location off")) {
+            checkOwnerPermission("Location")?.let { return it }
+            return CommandExecutionOutcome(true, tools.controlConnectivity("location"))
+        }
+
+        // 5. Real Accessibility Hardware & Gesture Actions
+        if (lower.contains("lock screen") || lower.contains("phone lock") || lower.contains("screen lock")) {
+            checkOwnerPermission("Lock Screen")?.let { return it }
+            return CommandExecutionOutcome(true, tools.performAccessibilityAction("lock_screen"))
+        }
+        if (lower.contains("screenshot")) {
+            return CommandExecutionOutcome(true, tools.performAccessibilityAction("screenshot"))
+        }
+        if (lower.contains("power menu") || lower.contains("restart menu")) {
+            checkOwnerPermission("Power Menu")?.let { return it }
+            return CommandExecutionOutcome(true, tools.performAccessibilityAction("power_menu"))
+        }
+        if (lower.contains("scroll down") || lower.contains("neeche scroll")) {
+            return CommandExecutionOutcome(true, tools.performAccessibilityAction("scroll_down"))
+        }
+        if (lower.contains("scroll up") || lower.contains("upar scroll")) {
+            return CommandExecutionOutcome(true, tools.performAccessibilityAction("scroll_up"))
+        }
+        if (lower.startsWith("click ") || lower.contains("par click")) {
+            val target = segment.replace(Regex("(?i)suzy|vikram|par click karo|par click|click"), "").trim()
+            if (target.isNotBlank()) {
+                return CommandExecutionOutcome(true, tools.performAccessibilityAction("click_text", target))
+            }
+        }
+
+        // 6. Auto-Rotate, Brightness & Volume Control
+        if (lower.contains("auto rotate") || lower.contains("rotation")) {
+            val enable = !lower.contains("off") && !lower.contains("band")
+            return CommandExecutionOutcome(true, tools.setAutoRotate(enable))
+        }
+        if (lower.contains("brightness")) {
+            checkOwnerPermission("Modify System Brightness")?.let { return it }
+            val num = Regex("\\d+").find(lower)?.value?.toIntOrNull()?.coerceIn(5, 100) ?: 60
+            return CommandExecutionOutcome(true, tools.setBrightnessPercent(num))
+        }
+        if (lower.contains("volume")) {
+            val num = Regex("\\d+").find(lower)?.value?.toIntOrNull()?.coerceIn(0, 100)
+                ?: if (lower.contains("full") || lower.contains("max")) 100 else if (lower.contains("mute") || lower.contains("zero")) 0 else 70
+            val stream = when {
+                lower.contains("alarm") -> "alarm"
+                lower.contains("ring") -> "ring"
+                else -> "media"
+            }
+            return CommandExecutionOutcome(true, tools.setVolumePercent(stream, num))
+        }
+        if (lower.contains("phone silent") || lower.contains("silent mode")) {
+            checkOwnerPermission("Ringer Mode")?.let { return it }
+            try {
+                val am = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                am.ringerMode = AudioManager.RINGER_MODE_VIBRATE
+            } catch (_: Exception) {}
+            return CommandExecutionOutcome(true, "Phone Vibrate/Silent mode par set ho gaya")
+        }
+
+        // 7. Emotional Attitude / Anger & Apology Engine (145-150)
         if (apologyKeywords.any { lower.contains(it) } && settings.angerLevel > 0) {
             val nextAnger = (settings.angerLevel - 45).coerceAtLeast(0)
             val nextTrust = (settings.trustScore + 3).coerceAtMost(100)
@@ -173,7 +270,7 @@ object OmniCommandRouter {
             )
         }
 
-        // 3. Persona Switching (including South Hero Vikram + all 8 Female Personas)
+        // 8. Persona Switching (including South Hero Vikram + all 8 Female Personas)
         for (p in SuzyCatalog.personas) {
             val pName = p.name.lowercase(Locale.US)
             if ((lower.contains(pName) && (lower.contains("lagao") || lower.contains("switch") || lower.contains("persona") || lower.contains("ban") || lower.contains("hero"))) ||
@@ -192,7 +289,7 @@ object OmniCommandRouter {
             }
         }
 
-        // 4. 3D ORB Style & Color Morphing (109-112)
+        // 9. 3D ORB Style & Color Morphing (109-112)
         if (lower.contains("arc reactor")) {
             return CommandExecutionOutcome(true, "ORB morphed to Arc Reactor", updatedSettings = settings.copy(orbStyle = "arc_reactor"))
         }
@@ -211,14 +308,8 @@ object OmniCommandRouter {
         if (lower.contains("plasma")) {
             return CommandExecutionOutcome(true, "ORB morphed to Plasma Sphere", updatedSettings = settings.copy(orbStyle = "plasma"))
         }
-        if (lower.contains("orb") && lower.contains("gold")) {
-            return CommandExecutionOutcome(true, "ORB color set to Hero Gold", updatedSettings = settings.copy(orbPrimaryHex = 0xFFF59E0BL, orbSecondaryHex = 0xFFEC4899L))
-        }
-        if (lower.contains("orb") && lower.contains("cyan")) {
-            return CommandExecutionOutcome(true, "ORB color set to Matrix Cyan", updatedSettings = settings.copy(orbPrimaryHex = 0xFF22D3EEL, orbSecondaryHex = 0xFFA855F7L))
-        }
 
-        // 5. Live UI Design & Layout Morphing (121-125)
+        // 10. Live UI Design & Layout Morphing (121-125)
         if (lower.contains("zen mode")) {
             val enableZen = !lower.contains("band") && !lower.contains("off")
             return CommandExecutionOutcome(
@@ -227,86 +318,25 @@ object OmniCommandRouter {
                 updatedSettings = settings.copy(layoutMode = if (enableZen) "zen" else "standard")
             )
         }
-        if (lower.contains("standard ui") || lower.contains("normal ui")) {
-            return CommandExecutionOutcome(true, "Standard UI restored", updatedSettings = settings.copy(layoutMode = "standard"))
-        }
         if (lower.contains("amoled") || lower.contains("pure black")) {
             return CommandExecutionOutcome(true, "Pure AMOLED Black theme applied", updatedSettings = settings.copy(uiThemeSkin = "amoled"))
-        }
-        if (lower.contains("emerald") || lower.contains("matrix theme")) {
-            return CommandExecutionOutcome(true, "Emerald Matrix UI skin applied", updatedSettings = settings.copy(uiThemeSkin = "emerald"))
-        }
-        if (lower.contains("rose gold")) {
-            return CommandExecutionOutcome(true, "Royal Rose Gold UI skin applied", updatedSettings = settings.copy(uiThemeSkin = "rose_gold"))
         }
         if (lower.contains("cyberpunk")) {
             return CommandExecutionOutcome(true, "Cyberpunk Neon UI skin applied", updatedSettings = settings.copy(uiThemeSkin = "cyberpunk"))
         }
-        if (lower.contains("sharp corner") || lower.contains("tactical corner")) {
-            return CommandExecutionOutcome(true, "Sharp Tactical 8dp corners applied", updatedSettings = settings.copy(cornerRadiusDp = 8))
-        }
-        if (lower.contains("round corner") || lower.contains("soft corner")) {
-            return CommandExecutionOutcome(true, "Soft Pill 24dp corners applied", updatedSettings = settings.copy(cornerRadiusDp = 24))
-        }
 
-        // 6. System Hardware & Android Settings Modification (20, 26, 27)
-        if (lower.contains("brightness")) {
-            checkOwnerPermission("Modify System Brightness")?.let { return it }
-            val num = Regex("\\d+").find(lower)?.value?.toIntOrNull()?.coerceIn(5, 100) ?: 60
-            applySystemBrightness(context, num)
-            return CommandExecutionOutcome(true, "System Brightness set to $num%")
-        }
-        if (lower.contains("flashlight") || lower.contains("torch")) {
-            val turnOn = !lower.contains("off") && !lower.contains("band")
-            return CommandExecutionOutcome(true, if (turnOn) "Flashlight ON" else "Flashlight OFF", toggleTorch = turnOn)
-        }
-        if (lower.contains("bluetooth")) {
-            checkOwnerPermission("Open Bluetooth Settings")?.let { return it }
-            openSystemAction(context, Settings.ACTION_BLUETOOTH_SETTINGS)
-            return CommandExecutionOutcome(true, "Bluetooth panel opened")
-        }
-        if (lower.contains("wifi") || lower.contains("wi-fi")) {
-            checkOwnerPermission("Open Wi-Fi Settings")?.let { return it }
-            openSystemAction(context, Settings.ACTION_WIFI_SETTINGS)
-            return CommandExecutionOutcome(true, "Wi-Fi settings opened")
-        }
-        if (lower.contains("volume full") || lower.contains("awaaz badhao")) {
-            setMediaVolumePercent(context, 100)
-            return CommandExecutionOutcome(true, "Media Volume set to 100%")
-        }
-        if (lower.contains("phone silent") || lower.contains("silent mode")) {
-            checkOwnerPermission("Ringer Mode")?.let { return it }
-            try {
-                val am = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-                am.ringerMode = AudioManager.RINGER_MODE_VIBRATE
-            } catch (_: Exception) {}
-            return CommandExecutionOutcome(true, "Phone set to Vibrate/Silent")
-        }
-
-        // 7. Boss Briefing (30)
+        // 11. Boss Briefing, Timer, Memory, Finance, Navigation
         if (lower.contains("boss briefing") || lower.contains("daily briefing") || lower.contains("status report")) {
             return CommandExecutionOutcome(true, "Running Owner Boss Briefing", triggerBossBriefing = true)
         }
-
-        // 8. Timer & Focus Pomodoro (13)
         if (lower.contains("timer") || lower.contains("focus")) {
             val mins = Regex("\\d+").find(lower)?.value?.toIntOrNull()?.coerceIn(1, 180) ?: 25
             return CommandExecutionOutcome(true, "Started ${mins}m Focus Timer", startTimerMinutes = mins)
         }
-
-        // 9. Autonomous Memory Save (33)
         if (lower.contains("yaad rakh") || lower.contains("remember that") || lower.contains("save memory")) {
             val fact = segment.replace(Regex("(?i)suzy|vikram|yaad rakhna|yaad rakho|remember that|save memory"), "").trim()
             if (fact.isNotBlank()) {
                 return CommandExecutionOutcome(true, "Saved to Memory Vault: $fact", addMemoryPair = "Auto-Learned" to fact)
-            }
-        }
-
-        // 10. Planner Task, Expense / Udhaar, Shopping, Parking (4, 50, 84, 91, 94)
-        if (lower.contains("task add") || lower.contains("planner mein")) {
-            val task = segment.replace(Regex("(?i)suzy|vikram|task add karo|task add|planner mein"), "").trim()
-            if (task.isNotBlank()) {
-                return CommandExecutionOutcome(true, "Added task: $task", addTaskTitle = task)
             }
         }
         if (lower.contains("udhaar") || lower.contains("rupaye") || lower.contains("kharcha")) {
@@ -316,17 +346,6 @@ object OmniCommandRouter {
                 return CommandExecutionOutcome(true, "Logged ₹${amt.toInt()} in $kind", addFinanceEntry = Triple(kind, segment, amt))
             }
         }
-        if (lower.contains("shopping list")) {
-            val item = segment.replace(Regex("(?i)suzy|vikram|shopping list mein|add karo|add"), "").trim()
-            if (item.isNotBlank()) {
-                return CommandExecutionOutcome(true, "Added to Shopping List: $item", addShoppingItem = item)
-            }
-        }
-        if (lower.contains("parking")) {
-            return CommandExecutionOutcome(true, "Parking spot saved", saveParkingText = segment)
-        }
-
-        // 11. Maps Navigation & YouTube Launcher (22, 99, 103)
         if (lower.contains("youtube")) {
             val query = segment.replace(Regex("(?i)suzy|vikram|youtube par|youtube|chalao|play|open|kholo"), "").trim()
             val intent = if (query.isBlank()) {
@@ -337,17 +356,11 @@ object OmniCommandRouter {
             try { context.startActivity(intent) } catch (_: Exception) {}
             return CommandExecutionOutcome(true, if (query.isBlank()) "Opened YouTube" else "YouTube search: $query")
         }
-        if (lower.contains("navigate") || lower.contains("rasta")) {
-            val dest = segment.replace(Regex("(?i)suzy|vikram|navigate to|navigate|ka rasta|rasta dikhao|chalo"), "").trim().ifBlank { "Home" }
-            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("google.navigation:q=${Uri.encode(dest)}")).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            try { context.startActivity(intent) } catch (_: Exception) {}
-            return CommandExecutionOutcome(true, "Navigation started to $dest")
-        }
 
-        // 12. Voice Screen Navigator (32) — Jump to any dedicated screen by voice
+        // 12. Voice Screen Navigator (including Permission Manager & Accessibility Studio)
         val routeMap = listOf(
+            "permission" to "settings_permissions",
+            "accessibility" to "settings_accessibility",
             "chat" to "tab_chat",
             "persona" to "tab_personas",
             "memory" to "tab_memory",
@@ -355,25 +368,13 @@ object OmniCommandRouter {
             "owner" to "mod_owner",
             "voice id" to "mod_owner",
             "orb studio" to "mod_orb_ui",
-            "ui design" to "mod_orb_ui",
-            "theme" to "mod_orb_ui",
             "finance" to "mod_finance",
             "udhaar" to "mod_finance",
-            "hisab" to "mod_finance",
             "planner" to "mod_planner",
-            "alarm" to "mod_planner",
-            "habit" to "mod_planner",
             "vision" to "mod_vision",
-            "camera" to "mod_vision",
             "radar" to "mod_tactical",
-            "compass" to "mod_tactical",
-            "wifi" to "mod_tactical",
-            "github" to "mod_tactical",
             "attitude" to "mod_attitude",
-            "gussa" to "mod_attitude",
             "sanctuary" to "mod_sanctuary",
-            "sleep" to "mod_sanctuary",
-            "audio lab" to "mod_audio_lab",
             "settings" to "settings_hub"
         )
         if (lower.contains("kholo") || lower.contains("open") || lower.contains("dikhao") || lower.contains("screen")) {
@@ -385,44 +386,5 @@ object OmniCommandRouter {
         }
 
         return CommandExecutionOutcome(false, "")
-    }
-
-    private fun applySystemBrightness(context: Context, percent: Int) {
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && Settings.System.canWrite(context)) {
-                Settings.System.putInt(
-                    context.contentResolver,
-                    Settings.System.SCREEN_BRIGHTNESS_MODE,
-                    Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL
-                )
-                val value = ((percent / 100f) * 255f).toInt().coerceIn(10, 255)
-                Settings.System.putInt(context.contentResolver, Settings.System.SCREEN_BRIGHTNESS, value)
-            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                val intent = Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS).apply {
-                    data = Uri.parse("package:${context.packageName}")
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                context.startActivity(intent)
-            }
-        } catch (_: Exception) {
-        }
-    }
-
-    private fun setMediaVolumePercent(context: Context, percent: Int) {
-        try {
-            val am = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-            val max = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-            val target = ((percent / 100f) * max).toInt().coerceIn(0, max)
-            am.setStreamVolume(AudioManager.STREAM_MUSIC, target, 0)
-        } catch (_: Exception) {
-        }
-    }
-
-    private fun openSystemAction(context: Context, action: String) {
-        try {
-            val intent = Intent(action).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
-            context.startActivity(intent)
-        } catch (_: Exception) {
-        }
     }
 }

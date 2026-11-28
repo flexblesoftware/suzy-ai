@@ -86,6 +86,7 @@ fun SettingsScreen(
     current: SuzySettings,
     onSave: (SuzySettings) -> Unit,
     onBack: () -> Unit,
+    onRunCommand: (String) -> Unit = {},
     initialStudioSection: Int = 0
 ) {
     val context = LocalContext.current
@@ -199,7 +200,9 @@ fun SettingsScreen(
         StudioCategory(5, "5. Wake-Word & Sensors Lab", "Custom Wake Phrase, Shake-to-Call & Flip-to-Mute", Icons.Rounded.Hearing, Color(0xFF34D399)),
         StudioCategory(6, "6. Call & Notification Alerts Studio", "Gemini Call Voice, OTP Shield & Lock-Screen Guard", Icons.Rounded.NotificationsActive, NeonCyan),
         StudioCategory(7, "7. Owner Mode & System Permissions", "Owner Passphrase/PIN, Media/Call Shields, WRITE_SETTINGS", Icons.Rounded.Security, Color(0xFFEF4444)),
-        StudioCategory(8, "8. Smart Triggers, Diagnostics & About", "Charger/Battery Rules, Thermal Alert, Version Info", Icons.Rounded.BugReport, NeonPurple)
+        StudioCategory(8, "8. Smart Triggers, Diagnostics & About", "Charger/Battery Rules, Thermal Alert, Version Info", Icons.Rounded.BugReport, NeonPurple),
+        StudioCategory(9, "9. All-In-One Permission Manager", "Complete 15-Permission Auditor, DND, Write Settings & Fix-All", Icons.Rounded.Security, Color(0xFF34D399)),
+        StudioCategory(10, "10. Accessibility & Hardware Test Deck", "Mobile Data, Hotspot, Wi-Fi, Lock Screen & Screenshot", Icons.Rounded.AutoAwesome, NeonCyan)
     )
 
     val modelPresets = listOf(
@@ -223,7 +226,7 @@ fun SettingsScreen(
                 }
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = if (activeSection == 0) "SETTINGS STUDIO (8 MODULES)" else studios.first { it.id == activeSection }.title,
+                        text = if (activeSection == 0) "SETTINGS STUDIO (10 MODULES)" else studios.first { it.id == activeSection }.title,
                         color = TextPrimary,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold
@@ -523,9 +526,23 @@ fun SettingsScreen(
                                 }
                                 Text("Low Battery Voice Alert: ${lowBatThreshold}%", color = NeonCyan, fontSize = 12.sp)
                                 Slider(value = lowBatThreshold.toFloat(), onValueChange = { lowBatThreshold = it.toInt() }, valueRange = 5f..40f)
-                                Text("Suzy AI v${BuildConfig.VERSION_NAME} • Omni-OS Edition (150 Modules)", color = TextSecondary, fontSize = 12.sp)
+                                Text("Suzy AI v${BuildConfig.VERSION_NAME} • Omni-OS Edition (174 Modules)", color = TextSecondary, fontSize = 12.sp)
                             }
                         }
+                    }
+
+                    9 -> {
+                        PermissionManagerScreen(
+                            focusAccessibilityOnly = false,
+                            onExecuteTestCommand = onRunCommand
+                        )
+                    }
+
+                    10 -> {
+                        PermissionManagerScreen(
+                            focusAccessibilityOnly = true,
+                            onExecuteTestCommand = onRunCommand
+                        )
                     }
                 }
 

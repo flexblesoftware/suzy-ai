@@ -214,6 +214,8 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application), S
     private var countdownJob: Job? = null
     private var sessionStartMillis: Long = 0L
     private val sessionTurnLines = mutableListOf<String>()
+    private val userSpeechBuffer = StringBuilder()
+    private var lastExecutedVoiceUtterance: String = ""
     private var lastShakeTimestampMs: Long = 0L
     private var wasFaceDown: Boolean = false
 
@@ -343,7 +345,8 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application), S
             context = appContext,
             rawInput = rawCommand,
             currentSettings = settings.value,
-            isOwnerVerified = !settings.value.ownerModeStrict || settings.value.ownerVoiceEnrolled
+            isOwnerVerified = !settings.value.ownerModeStrict || settings.value.ownerVoiceEnrolled,
+            tools = suzyTools
         )
         if (!outcome.handled) return ""
 
@@ -793,11 +796,33 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application), S
                     cur.copy(liveCaption = combined, lastCaption = combined)
                 }
             },
+            onUserSpeechOutput = { spokenChunk ->
+                if (gen != sessionGeneration) return@GeminiLiveClient
+                userSpeechBuffer.append(spokenChunk)
+                val fullSpoken = userSpeechBuffer.toString().trim()
+                if (fullSpoken.length >= 4 && !fullSpoken.equals(lastExecutedVoiceUtterance, ignoreCase = true)) {
+                    val execSummary = executeOmniCommand(fullSpoken, speakResponse = false)
+                    if (execSummary.isNotBlank()) {
+                        lastExecutedVoiceUtterance = fullSpoken
+                        userSpeechBuffer.clear()
+                        refreshDeviceTelemetry()
+                    }
+                }
+            },
             onToolCall = { callId: String, name: String, args: JSONObject ->
                 if (gen != sessionGeneration) return@GeminiLiveClient
-                val queryArg = args.optString("query").ifBlank { args.optString("command") }
-                val omniResult = if (queryArg.isNotBlank()) executeOmniCommand(queryArg, speakResponse = false) else ""
-                val result = omniResult.ifBlank { suzyTools.executeTool(name, args) }
+                val result = if (name.equals("execute_omni_command", ignoreCase = true)) {
+                    val cmd = args.optString("command").ifBlank { args.optString("query") }
+                    executeOmniCommand(cmd, speakResponse = false).ifBlank { "Command processed: $cmd" }
+                } else {
+                    val directRes = suzyTools.executeTool(name, args)
+                    if (directRes != "Executed $name") {
+                        directRes
+                    } else {
+                        val queryArg = args.optString("query").ifBlank { args.optString("command") }
+                        executeOmniCommand(queryArg, speakResponse = false).ifBlank { directRes }
+                    }
+                }
                 refreshDeviceTelemetry()
                 _uiState.update { it.copy(toolFeedback = result) }
                 liveClient?.sendToolResponse(callId, name, result)

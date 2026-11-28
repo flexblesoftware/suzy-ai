@@ -206,6 +206,8 @@ fun HomeScreen(
             route == "tab_memory" -> selectedTab = 3
             route == "tab_hub" -> { selectedTab = 4; activeHubModuleId = null }
             route == "settings_hub" -> onOpenSettings(0)
+            route == "settings_permissions" -> onOpenSettings(9)
+            route == "settings_accessibility" -> onOpenSettings(10)
             route.startsWith("mod_") -> {
                 selectedTab = 4
                 activeHubModuleId = route
@@ -550,6 +552,24 @@ private fun OrbTab(
                     modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
                     textAlign = TextAlign.Center
                 )
+            }
+
+            if (uiState.toolFeedback.isNotBlank()) {
+                Spacer(modifier = Modifier.height(6.dp))
+                GlassCard(
+                    shape = RoundedCornerShape(50),
+                    accentBorder = Color(0xFF34D399)
+                ) {
+                    Text(
+                        text = "⚡ ${uiState.toolFeedback}",
+                        color = Color(0xFF34D399),
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                    )
+                }
             }
 
             if (settings.captionsEnabled && isActive && settings.layoutMode != "zen") {
