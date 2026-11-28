@@ -179,6 +179,9 @@ fun HubAndModulesScreen(
     onStartTimer: (Int) -> Unit,
     onCancelTimer: () -> Unit,
     onCheckUpdate: () -> Unit,
+    onPrepareMicForVoiceprint: (Boolean) -> Unit,
+    onYieldMicManually: () -> Unit,
+    onLogSecurityEvent: (String, String, String) -> Unit,
     onOpenSettingsStudio: (Int) -> Unit
 ) {
     val context = LocalContext.current
@@ -301,57 +304,17 @@ fun HubAndModulesScreen(
 
             when (activeModuleId) {
                 "mod_owner" -> {
-                    var voiceSampleStep by remember { mutableIntStateOf(if (settings.ownerVoiceEnrolled) 3 else 0) }
-                    GlassCard(accentBorder = Color(0xFFEF4444), modifier = Modifier.fillMaxWidth()) {
-                        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Text("OWNER VOICEPRINT & IDENTITY (${settings.ownerName})", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                            Text("Acoustic Voiceprint: ${if (settings.ownerVoiceEnrolled) "ENROLLED (${settings.ownerVoicePitchHz.toInt()} Hz)" else "Not Enrolled"}", color = NeonCyan, fontSize = 12.sp)
-                            Button(
-                                onClick = {
-                                    voiceSampleStep = (voiceSampleStep + 1).coerceAtMost(3)
-                                    if (voiceSampleStep == 3) {
-                                        onUpdateSettings(settings.copy(ownerVoiceEnrolled = true, ownerVoicePitchHz = 132f))
-                                        Toast.makeText(context, "Owner Voiceprint Enrolled!", Toast.LENGTH_SHORT).show()
-                                    }
-                                },
-                                colors = ButtonDefaults.buttonColors(containerColor = NeonCyan),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text(if (voiceSampleStep < 3) "RECORD VOICE SAMPLE ($voiceSampleStep/3)" else "VOICEPRINT ACTIVE (RE-CALIBRATE)", color = Color.Black, fontWeight = FontWeight.Bold)
-                            }
-                            Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
-                                Text("Strict Owner-Only Command Lock", color = TextPrimary, fontSize = 13.sp)
-                                Switch(checked = settings.ownerModeStrict, onCheckedChange = { onUpdateSettings(settings.copy(ownerModeStrict = it)) })
-                            }
-                            Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
-                                Text("Guest / Demo Sandbox Mode (Hide Vault)", color = TextPrimary, fontSize = 13.sp)
-                                Switch(checked = settings.guestModeActive, onCheckedChange = { onUpdateSettings(settings.copy(guestModeActive = it)) })
-                            }
-                            Button(
-                                onClick = { onRunCommand("stealth mode") },
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444)),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text("ACTIVATE STEALTH PANIC LOCK", fontWeight = FontWeight.Bold)
-                            }
-                        }
-                    }
-
-                    Text("SECURITY AUDIT LOG (${securityLogs.size})", color = TextSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                    if (securityLogs.isEmpty()) {
-                        GlassCard(modifier = Modifier.fillMaxWidth()) {
-                            Text("Zero unauthorized command attempts recorded.", color = TextSecondary, fontSize = 12.sp, modifier = Modifier.padding(14.dp))
-                        }
-                    } else {
-                        securityLogs.take(8).forEach { log ->
-                            GlassCard(accentBorder = Color(0xFFEF4444), modifier = Modifier.fillMaxWidth()) {
-                                Column(modifier = Modifier.padding(12.dp)) {
-                                    Text("${log.status} • ${log.timestamp}", color = Color(0xFFEF4444), fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                    Text("${log.command} — ${log.reason}", color = TextPrimary, fontSize = 12.sp)
-                                }
-                            }
-                        }
-                    }
+                    OwnerVoiceIdScreen(
+                        settings = settings,
+                        securityLogs = securityLogs,
+                        isExternalMicYielded = uiState.isExternalMicYielded,
+                        externalMicReason = uiState.externalMicReason,
+                        onUpdateSettings = onUpdateSettings,
+                        onPrepareMicForVoiceprint = onPrepareMicForVoiceprint,
+                        onYieldMicManually = onYieldMicManually,
+                        onLogSecurityEvent = onLogSecurityEvent,
+                        onRunCommand = onRunCommand
+                    )
                 }
 
                 "mod_orb_ui" -> {

@@ -185,6 +185,9 @@ fun HomeScreen(
     onCheckUpdate: () -> Unit,
     onQuickReaction: (String) -> Unit,
     onInterruptClick: () -> Unit,
+    onPrepareMicForVoiceprint: (Boolean) -> Unit,
+    onYieldMicManually: () -> Unit,
+    onLogSecurityEvent: (String, String, String) -> Unit,
     onOpenSettings: (Int) -> Unit
 ) {
     ActiveUiStyleHolder.skinId = settings.uiThemeSkin
@@ -313,6 +316,9 @@ fun HomeScreen(
                         onStartTimer = onStartTimer,
                         onCancelTimer = onCancelTimer,
                         onCheckUpdate = onCheckUpdate,
+                        onPrepareMicForVoiceprint = onPrepareMicForVoiceprint,
+                        onYieldMicManually = onYieldMicManually,
+                        onLogSecurityEvent = onLogSecurityEvent,
                         onOpenSettingsStudio = onOpenSettings
                     )
                 }

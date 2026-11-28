@@ -12,6 +12,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.suzy.ai.audio.AudioBlockReason
 import com.suzy.ai.audio.AudioEngine
+import com.suzy.ai.audio.ExternalMicCoexistenceGuard
 import com.suzy.ai.brain.OmniCommandRouter
 import com.suzy.ai.data.AutomationRuleItem
 import com.suzy.ai.data.ChatMessageItem
@@ -85,7 +86,9 @@ data class SuzyUiState(
     val permissions: AppPermissionsStatus = AppPermissionsStatus(),
     val toolFeedback: String = "",
     val isChatSending: Boolean = false,
-    val pendingNavigationRoute: String? = null
+    val pendingNavigationRoute: String? = null,
+    val isExternalMicYielded: Boolean = false,
+    val externalMicReason: String = ""
 )
 
 class SuzyViewModel(application: Application) : AndroidViewModel(application), SensorEventListener {
@@ -94,6 +97,25 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application), S
     private val repo = SettingsRepository(appContext)
     private val omniRepo = OmniVaultRepository(appContext)
     private val audioEngine = AudioEngine(appContext, viewModelScope)
+    @Volatile
+    private var isRecordingVoiceprint: Boolean = false
+    private val externalMicGuard = ExternalMicCoexistenceGuard(appContext, viewModelScope) { yielded, reason ->
+        _uiState.update { it.copy(isExternalMicYielded = yielded, externalMicReason = reason) }
+        if (yielded) {
+            if (!isSessionActive() && !isRecordingVoiceprint) {
+                CallAnnouncerService.stopGuard(appContext)
+                _uiState.update { it.copy(isWakeWordListening = false, statusText = reason) }
+            }
+        } else {
+            if (settings.value.backgroundGuardEnabled && !isRecordingVoiceprint) {
+                CallAnnouncerService.startGuard(appContext)
+                refreshGuardAndPermissions()
+                _uiState.update {
+                    if (!isSessionActive()) it.copy(statusText = "Say "${settings.value.customWakePhrase}" or Tap Start Call") else it
+                }
+            }
+        }
+    }
     private val suzyTools = SuzyTools(appContext)
     private val sensorManager = appContext.getSystemService(Context.SENSOR_SERVICE) as? SensorManager
 
@@ -250,6 +272,8 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application), S
             refreshGuardAndPermissions()
         }
 
+        externalMicGuard.enabled = settings.value.externalMicCoexistenceEnabled
+        externalMicGuard.start()
         registerHardwareSensors()
         refreshDeviceTelemetry()
         refreshGuardAndPermissions()
@@ -508,6 +532,33 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application), S
         viewModelScope.launch { omniRepo.saveMedicalId(info) }
     }
 
+    fun prepareMicForVoiceprintRecording(recording: Boolean) {
+        isRecordingVoiceprint = recording
+        if (recording) {
+            CallAnnouncerService.stopGuard(appContext)
+            _uiState.update { it.copy(isWakeWordListening = false) }
+        } else if (settings.value.backgroundGuardEnabled && !externalMicGuard.isYieldedToExternalApp) {
+            CallAnnouncerService.startGuard(appContext)
+            refreshGuardAndPermissions()
+        }
+    }
+
+    fun yieldMicManuallyForExternalAi(seconds: Int = 30) {
+        externalMicGuard.triggerManualYield(seconds, "Mic Released for Gemini / Claude (${seconds}s)")
+    }
+
+    fun onAppMovedToBackground() {
+        if (settings.value.externalMicCoexistenceEnabled && !isSessionActive() && !isRecordingVoiceprint) {
+            externalMicGuard.triggerManualYield(6, "Background Mic Cooldown")
+        }
+    }
+
+    fun logSecurityEventManual(command: String, status: String, reason: String) {
+        viewModelScope.launch {
+            omniRepo.logSecurityEvent(command, status, reason)
+        }
+    }
+
     fun refreshGuardAndPermissions() {
         val perms = PermissionHelper.checkAll(appContext)
         _uiState.update {
@@ -522,7 +573,8 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application), S
     }
 
     fun syncBackgroundGuard(enabled: Boolean) {
-        if (enabled) {
+        externalMicGuard.enabled = settings.value.externalMicCoexistenceEnabled
+        if (enabled && !externalMicGuard.isYieldedToExternalApp && !isRecordingVoiceprint) {
             CallAnnouncerService.startGuard(appContext)
         } else {
             CallAnnouncerService.stopGuard(appContext)
@@ -1078,6 +1130,7 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application), S
 
     override fun onCleared() {
         super.onCleared()
+        externalMicGuard.stop()
         try { sensorManager?.unregisterListener(this) } catch (_: Exception) {}
         CallServiceBridge.onToggleMuteRequested = null
         CallServiceBridge.onStopCallRequested = null

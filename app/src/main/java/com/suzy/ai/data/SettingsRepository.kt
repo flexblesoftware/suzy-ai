@@ -89,7 +89,13 @@ data class SuzySettings(
     val ownerModeStrict: Boolean = false,
     val ownerVoiceEnrolled: Boolean = false,
     val ownerVoicePitchHz: Float = 135f,
-    val ownerVoiceEnergy: Float = 0.5f,
+    val ownerVoiceSpreadHz: Float = 18f,
+    val ownerVoiceZcr: Float = 0.08f,
+    val ownerVoiceLowBand: Float = 0.55f,
+    val ownerVoiceMidBand: Float = 0.30f,
+    val ownerVoiceHighBand: Float = 0.15f,
+    val ownerVoiceMatchThreshold: Int = 74,
+    val externalMicCoexistenceEnabled: Boolean = true,
     val guestModeActive: Boolean = false,
     val stealthCodeword: String = "code zero",
     // Emotional Attitude, Anger & Trust Engine (142, 145-150)
@@ -167,7 +173,13 @@ class SettingsRepository(private val context: Context) {
         val OWNER_MODE_STRICT = booleanPreferencesKey("owner_mode_strict")
         val OWNER_VOICE_ENROLLED = booleanPreferencesKey("owner_voice_enrolled")
         val OWNER_VOICE_PITCH = floatPreferencesKey("owner_voice_pitch")
-        val OWNER_VOICE_ENERGY = floatPreferencesKey("owner_voice_energy")
+        val OWNER_VOICE_SPREAD = floatPreferencesKey("owner_voice_spread")
+        val OWNER_VOICE_ZCR = floatPreferencesKey("owner_voice_zcr")
+        val OWNER_VOICE_LOW = floatPreferencesKey("owner_voice_low")
+        val OWNER_VOICE_MID = floatPreferencesKey("owner_voice_mid")
+        val OWNER_VOICE_HIGH = floatPreferencesKey("owner_voice_high")
+        val OWNER_VOICE_THRESHOLD = intPreferencesKey("owner_voice_threshold")
+        val EXTERNAL_MIC_COEXIST = booleanPreferencesKey("external_mic_coexist")
         val GUEST_MODE = booleanPreferencesKey("guest_mode")
         val STEALTH_CODEWORD = stringPreferencesKey("stealth_codeword")
 
@@ -246,7 +258,13 @@ class SettingsRepository(private val context: Context) {
             ownerModeStrict = prefs[Keys.OWNER_MODE_STRICT] ?: false,
             ownerVoiceEnrolled = prefs[Keys.OWNER_VOICE_ENROLLED] ?: false,
             ownerVoicePitchHz = prefs[Keys.OWNER_VOICE_PITCH] ?: 135f,
-            ownerVoiceEnergy = prefs[Keys.OWNER_VOICE_ENERGY] ?: 0.5f,
+            ownerVoiceSpreadHz = prefs[Keys.OWNER_VOICE_SPREAD] ?: 18f,
+            ownerVoiceZcr = prefs[Keys.OWNER_VOICE_ZCR] ?: 0.08f,
+            ownerVoiceLowBand = prefs[Keys.OWNER_VOICE_LOW] ?: 0.55f,
+            ownerVoiceMidBand = prefs[Keys.OWNER_VOICE_MID] ?: 0.30f,
+            ownerVoiceHighBand = prefs[Keys.OWNER_VOICE_HIGH] ?: 0.15f,
+            ownerVoiceMatchThreshold = prefs[Keys.OWNER_VOICE_THRESHOLD] ?: 74,
+            externalMicCoexistenceEnabled = prefs[Keys.EXTERNAL_MIC_COEXIST] ?: true,
             guestModeActive = prefs[Keys.GUEST_MODE] ?: false,
             stealthCodeword = prefs[Keys.STEALTH_CODEWORD] ?: "code zero",
             angerLevel = prefs[Keys.ANGER_LEVEL] ?: 0,
@@ -335,7 +353,13 @@ class SettingsRepository(private val context: Context) {
             prefs[Keys.OWNER_MODE_STRICT] = settings.ownerModeStrict
             prefs[Keys.OWNER_VOICE_ENROLLED] = settings.ownerVoiceEnrolled
             prefs[Keys.OWNER_VOICE_PITCH] = settings.ownerVoicePitchHz
-            prefs[Keys.OWNER_VOICE_ENERGY] = settings.ownerVoiceEnergy
+            prefs[Keys.OWNER_VOICE_SPREAD] = settings.ownerVoiceSpreadHz
+            prefs[Keys.OWNER_VOICE_ZCR] = settings.ownerVoiceZcr
+            prefs[Keys.OWNER_VOICE_LOW] = settings.ownerVoiceLowBand
+            prefs[Keys.OWNER_VOICE_MID] = settings.ownerVoiceMidBand
+            prefs[Keys.OWNER_VOICE_HIGH] = settings.ownerVoiceHighBand
+            prefs[Keys.OWNER_VOICE_THRESHOLD] = settings.ownerVoiceMatchThreshold.coerceIn(60, 95)
+            prefs[Keys.EXTERNAL_MIC_COEXIST] = settings.externalMicCoexistenceEnabled
             prefs[Keys.GUEST_MODE] = settings.guestModeActive
             prefs[Keys.STEALTH_CODEWORD] = settings.stealthCodeword.trim()
 

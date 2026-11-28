@@ -28,10 +28,16 @@ import com.suzy.ai.viewmodel.SuzyViewModel
 class MainActivity : ComponentActivity() {
 
     private var resumeTick by mutableIntStateOf(0)
+    private var pauseTick by mutableIntStateOf(0)
 
     override fun onResume() {
         super.onResume()
         resumeTick++
+    }
+
+    override fun onPause() {
+        super.onPause()
+        pauseTick++
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -64,6 +70,12 @@ class MainActivity : ComponentActivity() {
                 LaunchedEffect(resumeTick) {
                     vm.refreshGuardAndPermissions()
                     vm.refreshDeviceTelemetry()
+                }
+
+                LaunchedEffect(pauseTick) {
+                    if (pauseTick > 0) {
+                        vm.onAppMovedToBackground()
+                    }
                 }
 
                 val multiPermissionLauncher = rememberLauncherForActivityResult(
@@ -182,6 +194,9 @@ class MainActivity : ComponentActivity() {
                         onCheckUpdate = { updateManager.checkForUpdate(silent = false) },
                         onQuickReaction = { vm.sendQuickReaction(it) },
                         onInterruptClick = { vm.interruptSuzy() },
+                        onPrepareMicForVoiceprint = { vm.prepareMicForVoiceprintRecording(it) },
+                        onYieldMicManually = { vm.yieldMicManuallyForExternalAi(30) },
+                        onLogSecurityEvent = { c, s, r -> vm.logSecurityEventManual(c, s, r) },
                         onOpenSettings = { studioSec ->
                             initialStudioSection = studioSec
                             showSettings = true
