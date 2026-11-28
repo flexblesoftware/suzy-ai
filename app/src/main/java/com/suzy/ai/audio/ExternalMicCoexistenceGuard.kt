@@ -7,24 +7,18 @@ import android.media.AudioRecordingConfiguration
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
-import android.os.Process
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
-/**
- * Guarantees Suzy's background wake-word listener NEVER blocks or breaks the microphone
- * in Google Gemini, Claude, ChatGPT, WhatsApp, or any other foreground app.
- */
 class ExternalMicCoexistenceGuard(
     private val context: Context,
     private val scope: CoroutineScope,
     private val onExternalMicStateChanged: (isYielded: Boolean, activeAppLabel: String) -> Unit
 ) {
     private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
-    private val myUid = Process.myUid()
     private val mainHandler = Handler(Looper.getMainLooper())
 
     @Volatile
@@ -36,6 +30,9 @@ class ExternalMicCoexistenceGuard(
         private set
 
     @Volatile
+    var isSuzyActivelyRecording: Boolean = false
+
+    @Volatile
     private var cooldownUntilMs: Long = 0L
 
     @Volatile
@@ -44,34 +41,27 @@ class ExternalMicCoexistenceGuard(
     private var monitorJob: Job? = null
 
     private val externalVoicePackages = setOf(
-        "com.google.android.googlequicksearchbox", // Google App / Gemini Assistant
-        "com.google.android.apps.bard",            // Google Gemini standalone
-        "com.anthropic.claude",                    // Claude AI
-        "com.openai.chatgpt",                      // ChatGPT
-        "com.microsoft.copilot",                   // Microsoft Copilot
-        "ai.perplexity.app.android",               // Perplexity
-        "com.whatsapp",                            // WhatsApp voice notes/calls
-        "com.whatsapp.w4b",                        // WhatsApp Business
-        "org.telegram.messenger",                  // Telegram
-        "com.android.soundrecorder",               // Voice Recorder
-        "com.sec.android.app.voicenote",           // Samsung Voice Recorder
-        "com.oneplus.soundrecorder",               // OnePlus Recorder
-        "com.miui.voicerecorder"                   // Xiaomi Recorder
+        "com.google.android.googlequicksearchbox",
+        "com.google.android.apps.bard",
+        "com.anthropic.claude",
+        "com.openai.chatgpt",
+        "com.microsoft.copilot",
+        "ai.perplexity.app.android",
+        "com.whatsapp",
+        "com.whatsapp.w4b",
+        "org.telegram.messenger",
+        "com.android.soundrecorder",
+        "com.sec.android.app.voicenote",
+        "com.oneplus.soundrecorder",
+        "com.miui.voicerecorder"
     )
 
     private val recordingCallback = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
         object : AudioManager.AudioRecordingCallback() {
             override fun onRecordingConfigChanged(configs: List<AudioRecordingConfiguration>?) {
-                val otherRecording = configs?.any { cfg ->
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                        cfg.clientUid != myUid
-                    } else {
-                        true
-                    }
-                } == true
-
-                if (otherRecording) {
-                    // Immediately yield mic and keep 14s cooldown so multi-turn Gemini/Claude voice never gets cut off
+                val count = configs?.size ?: 0
+                val externalActive = if (isSuzyActivelyRecording) count > 1 else count > 0
+                if (externalActive) {
                     cooldownUntilMs = System.currentTimeMillis() + 14_000L
                     setYieldState(true, "External App Using Mic (Gemini/Claude Safe)")
                 }
@@ -86,7 +76,6 @@ class ExternalMicCoexistenceGuard(
             } catch (_: Exception) {
             }
         }
-
         monitorJob?.cancel()
         monitorJob = scope.launch {
             while (isActive) {
@@ -120,22 +109,18 @@ class ExternalMicCoexistenceGuard(
 
         val now = System.currentTimeMillis()
 
-        // 1. Check active hardware recording sessions by other apps
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            val activeOther = try {
-                audioManager?.activeRecordingConfigurations?.any { cfg ->
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) cfg.clientUid != myUid else false
-                } == true
-            } catch (_: Exception) { false }
-
-            if (activeOther) {
+            val count = try {
+                audioManager?.activeRecordingConfigurations?.size ?: 0
+            } catch (_: Exception) { 0 }
+            val externalActive = if (isSuzyActivelyRecording) count > 1 else count > 0
+            if (externalActive) {
                 cooldownUntilMs = now + 14_000L
                 setYieldState(true, "External App Mic Active")
                 return
             }
         }
 
-        // 2. Check if another AI assistant / voice app is currently in foreground (if UsageStats granted)
         val fgPkg = detectForegroundPackage()
         if (fgPkg != null && fgPkg != context.packageName && externalVoicePackages.contains(fgPkg)) {
             cooldownUntilMs = now + 5_000L
@@ -150,7 +135,6 @@ class ExternalMicCoexistenceGuard(
             return
         }
 
-        // 3. Respect cooldown window after external app releases mic
         if (now < cooldownUntilMs) {
             if (!isYieldedToExternalApp) {
                 setYieldState(true, "Mic Cooldown for External AI")
