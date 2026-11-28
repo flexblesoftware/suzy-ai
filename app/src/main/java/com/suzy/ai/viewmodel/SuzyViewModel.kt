@@ -97,25 +97,6 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application), S
     private val repo = SettingsRepository(appContext)
     private val omniRepo = OmniVaultRepository(appContext)
     private val audioEngine = AudioEngine(appContext, viewModelScope)
-    @Volatile
-    private var isRecordingVoiceprint: Boolean = false
-    private val externalMicGuard = ExternalMicCoexistenceGuard(appContext, viewModelScope) { yielded, reason ->
-        _uiState.update { it.copy(isExternalMicYielded = yielded, externalMicReason = reason) }
-        if (yielded) {
-            if (!isSessionActive() && !isRecordingVoiceprint) {
-                CallAnnouncerService.stopGuard(appContext)
-                _uiState.update { it.copy(isWakeWordListening = false, statusText = reason) }
-            }
-        } else {
-            if (settings.value.backgroundGuardEnabled && !isRecordingVoiceprint) {
-                CallAnnouncerService.startGuard(appContext)
-                refreshGuardAndPermissions()
-                _uiState.update {
-                    if (!isSessionActive()) it.copy(statusText = "Say \"${settings.value.customWakePhrase}\" or Tap Start Call") else it
-                }
-            }
-        }
-    }
     private val suzyTools = SuzyTools(appContext)
     private val sensorManager = appContext.getSystemService(Context.SENSOR_SERVICE) as? SensorManager
 
@@ -196,6 +177,26 @@ class SuzyViewModel(application: Application) : AndroidViewModel(application), S
         started = SharingStarted.Eagerly,
         initialValue = ""
     )
+
+    @Volatile
+    private var isRecordingVoiceprint: Boolean = false
+    private val externalMicGuard = ExternalMicCoexistenceGuard(appContext, viewModelScope) { yielded, reason ->
+        _uiState.update { it.copy(isExternalMicYielded = yielded, externalMicReason = reason) }
+        if (yielded) {
+            if (!isSessionActive() && !isRecordingVoiceprint) {
+                CallAnnouncerService.stopGuard(appContext)
+                _uiState.update { it.copy(isWakeWordListening = false, statusText = reason) }
+            }
+        } else {
+            if (settings.value.backgroundGuardEnabled && !isRecordingVoiceprint) {
+                CallAnnouncerService.startGuard(appContext)
+                refreshGuardAndPermissions()
+                _uiState.update {
+                    if (!isSessionActive()) it.copy(statusText = "Say \"${settings.value.customWakePhrase}\" or Tap Start Call") else it
+                }
+            }
+        }
+    }
 
     private val _uiState = MutableStateFlow(SuzyUiState())
     val uiState: StateFlow<SuzyUiState> = _uiState.asStateFlow()

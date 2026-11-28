@@ -2,7 +2,7 @@ package com.suzy.ai.audio
 
 import android.annotation.SuppressLint
 import android.content.Context
-import android.media.AudioAttributes
+import android.media.AudioManager
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.AudioTrack
@@ -155,12 +155,15 @@ object VoiceprintEngine {
                 AudioFormat.CHANNEL_OUT_MONO,
                 ENCODING
             )
-            val track = AudioTrack.Builder()
-                .setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_MEDIA)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                        .build()
+            @Suppress("DEPRECATION")
+            val track = AudioTrack(
+                AudioManager.STREAM_MUSIC,
+                SAMPLE_RATE,
+                AudioFormat.CHANNEL_OUT_MONO,
+                ENCODING,
+                max(minBuf, pcmData.size),
+                AudioTrack.MODE_STATIC
+            )
                 )
                 .setAudioFormat(
                     AudioFormat.Builder()

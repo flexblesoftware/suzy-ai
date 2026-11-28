@@ -61,7 +61,7 @@ class ExternalMicCoexistenceGuard(
 
     private val recordingCallback = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
         object : AudioManager.AudioRecordingCallback() {
-            override fun onRecordingConfigChanged(configs: MutableList<AudioRecordingConfiguration>?) {
+            override fun onRecordingConfigChanged(configs: List<AudioRecordingConfiguration>?) {
                 val otherRecording = configs?.any { cfg ->
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                         cfg.clientUid != myUid
